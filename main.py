@@ -1,22 +1,28 @@
 """
-Automated Study Planner - CLI Prototype
+Automated Study Planner - CLI Prototype with Persistent Storage
 Main application file for managing courses, deadlines, and generating study plans.
 """
 
 from tabulate import tabulate
 from datetime import datetime, timedelta
-import json
+from models import Course, Deadline, StudySession, StorageManager
 
 
 class StudyPlanner:
-    """CLI-based study planner with in-memory storage."""
+    """CLI-based study planner with persistent JSON storage."""
     
     def __init__(self):
-        self.courses = {}  # {course_id: {name, difficulty_level, user_id}}
-        self.deadlines = {}  # {deadline_id: {course_id, due_date, task_type}}
-        self.study_plans = []  # List of study sessions
-        self.course_counter = 0
-        self.deadline_counter = 0
+        self.storage = StorageManager()
+        
+        # Load persisted data
+        self.courses = self.storage.load_courses()
+        self.deadlines = self.storage.load_deadlines()
+        self.study_plans = self.storage.load_study_plans()
+        
+        # Load counters to maintain ID continuity
+        counters = self.storage.load_counters()
+        self.course_counter = counters.get("course_counter", 0)
+        self.deadline_counter = counters.get("deadline_counter", 0)
     
     def add_course(self, name, difficulty_level):
         """Add a new course. Difficulty 1-5."""
@@ -26,11 +32,13 @@ class StudyPlanner:
         
         self.course_counter += 1
         course_id = self.course_counter
-        self.courses[course_id] = {
-            "name": name,
-            "difficulty_level": difficulty_level,
-            "added_date": datetime.now().strftime("%Y-%m-%d")
-        }
+        self.courses[course_id] = Course(
+            course_id=course_id,
+            name=name,
+            difficulty_level=difficulty_level,
+            added_date=datetime.now().strftime("%Y-%m-%d")
+        )
+        self._save_data()
         print(f"✅ Course '{name}' added with ID {course_id} (Difficulty: {difficulty_level}/5)")
         return course_id
     
@@ -52,12 +60,14 @@ class StudyPlanner:
         
         self.deadline_counter += 1
         deadline_id = self.deadline_counter
-        self.deadlines[deadline_id] = {
-            "course_id": course_id,
-            "due_date": due_date_str,
-            "task_type": task_type
-        }
-        print(f"✅ Deadline added: {self.courses[course_id]['name']} - {task_type} due {due_date_str}")
+        self.deadlines[deadline_id] = Deadline(
+            deadline_id=deadline_id,
+            course_id=course_id,
+            due_date=due_date_str,
+            task_type=task_type
+        )
+        self._save_data()
+        print(f"✅ Deadline added: {self.courses[course_id].name} - {task_type} due {due_date_str}")
         return deadline_id
     
     def generate_study_plan(self, start_date_str=None):
@@ -80,14 +90,14 @@ class StudyPlanner:
         # Sort deadlines by due date
         sorted_deadlines = sorted(
             self.deadlines.items(),
-            key=lambda x: datetime.strptime(x[1]["due_date"], "%Y-%m-%d")
+            key=lambda x: datetime.strptime(x[1].due_date, "%Y-%m-%d")
         )
         
         # Generate study sessions
         for deadline_id, deadline_info in sorted_deadlines:
-            course_id = deadline_info["course_id"]
+            course_id = deadline_info.course_id
             course = self.courses[course_id]
-            due_date = datetime.strptime(deadline_info["due_date"], "%Y-%m-%d").date()
+            due_date = datetime.strptime(deadline_info.due_date, "%Y-%m-%d").date()
             
             # Calculate days until deadline
             days_until = (due_date - start_date).days
@@ -95,7 +105,7 @@ class StudyPlanner:
                 continue  # Skip past deadlines
             
             # Calculate study duration based on difficulty (harder = longer sessions)
-            difficulty = course["difficulty_level"]
+            difficulty = course.difficulty_level
             base_duration = 60  # minutes
             total_study_time = base_duration * difficulty  # Multiply by difficulty
             sessions_count = max(2, difficulty)  # At least 2 sessions per course
@@ -107,17 +117,18 @@ class StudyPlanner:
             )
             
             for session_date in session_dates:
-                self.study_plans.append({
-                    "date": session_date.strftime("%Y-%m-%d"),
-                    "subject": course["name"],
-                    "task_type": deadline_info["task_type"],
-                    "duration": duration_per_session,
-                    "difficulty": difficulty,
-                    "completion_status": False
-                })
+                self.study_plans.append(StudySession(
+                    date=session_date.strftime("%Y-%m-%d"),
+                    subject=course.name,
+                    task_type=deadline_info.task_type,
+                    duration=duration_per_session,
+                    difficulty=difficulty,
+                    completion_status=False
+                ))
         
         # Sort by date
-        self.study_plans.sort(key=lambda x: x["date"])
+        self.study_plans.sort(key=lambda x: x.date)
+        self._save_data()
         print(f"✅ Study plan generated with {len(self.study_plans)} sessions.")
     
     def _distribute_sessions(self, start_date, end_date, num_sessions):
@@ -147,7 +158,7 @@ class StudyPlanner:
             return
         
         table_data = [
-            [cid, data["name"], f"{data['difficulty_level']}/5", data["added_date"]]
+            [cid, data.name, f"{data.difficulty_level}/5", data.added_date]
             for cid, data in self.courses.items()
         ]
         headers = ["Course ID", "Course Name", "Difficulty", "Added Date"]
@@ -162,12 +173,12 @@ class StudyPlanner:
         
         table_data = []
         for did, data in self.deadlines.items():
-            course_name = self.courses[data["course_id"]]["name"]
+            course_name = self.courses[data.course_id].name
             table_data.append([
                 did,
                 course_name,
-                data["task_type"],
-                data["due_date"]
+                data.task_type,
+                data.due_date
             ])
         
         headers = ["Deadline ID", "Course", "Task Type", "Due Date"]
@@ -182,12 +193,12 @@ class StudyPlanner:
         
         table_data = [
             [
-                plan["date"],
-                plan["subject"],
-                plan["task_type"],
-                f"{plan['duration']} min",
-                f"{plan['difficulty']}/5",
-                "✓" if plan["completion_status"] else "○"
+                plan.date,
+                plan.subject,
+                plan.task_type,
+                f"{plan.duration} min",
+                f"{plan.difficulty}/5",
+                "✓" if plan.completion_status else "○"
             ]
             for plan in self.study_plans
         ]
@@ -199,10 +210,21 @@ class StudyPlanner:
     def mark_session_complete(self, session_index):
         """Mark a study session as complete."""
         if 0 <= session_index < len(self.study_plans):
-            self.study_plans[session_index]["completion_status"] = True
-            print(f"✅ Session marked as complete: {self.study_plans[session_index]['subject']}")
+            self.study_plans[session_index].completion_status = True
+            self._save_data()
+            print(f"✅ Session marked as complete: {self.study_plans[session_index].subject}")
         else:
             print("❌ Invalid session index.")
+    
+    def _save_data(self):
+        """Save all data to persistent storage."""
+        self.storage.save_courses(self.courses)
+        self.storage.save_deadlines(self.deadlines)
+        self.storage.save_study_plans(self.study_plans)
+        self.storage.save_counters({
+            "course_counter": self.course_counter,
+            "deadline_counter": self.deadline_counter
+        })
     
     def interactive_menu(self):
         """Run the interactive CLI menu."""

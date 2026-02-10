@@ -1,7 +1,7 @@
-# Automated Study Planner - CLI Prototype (Chunk 1)
+# Automated Study Planner - CLI with Persistent Storage (Chunk 1-2)
 
 ## Overview
-This is the CLI prototype of the Automated Study Planner. It provides a command-line interface for managing courses, deadlines, and generating personalized study plans.
+This is the CLI application of the Automated Study Planner with persistent JSON storage. It provides a command-line interface for managing courses, deadlines, and generating personalized study plans. All data is automatically saved and restored across sessions.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -9,7 +9,8 @@ This is the CLI prototype of the Automated Study Planner. It provides a command-
 - ✅ Automatically generate personalized study plans
 - ✅ View courses, deadlines, and study plans in table format
 - ✅ Track completion status of study sessions
-- ✅ In-memory storage (dictionaries)
+- ✅ **Persistent JSON storage** - Data automatically saved and restored
+- ✅ **Cross-session state** - All data persists across application restarts
 
 ## Setup
 
@@ -62,12 +63,16 @@ python main.py
 - Number of sessions = `max(2, Difficulty Level)`
 - Sessions are sorted chronologically
 
-## Data Model (In-Memory)
+## Data Model (Persistent JSON)
 ```python
-courses = {course_id: {name, difficulty_level, added_date}}
-deadlines = {deadline_id: {course_id, due_date, task_type}}
-study_plans = [{date, subject, task_type, duration, difficulty, completion_status}]
+# Stored in data/ directory:
+courses.json       # {course_id: {course_id, name, difficulty_level, added_date}}
+deadlines.json     # {deadline_id: {deadline_id, course_id, due_date, task_type}}
+study_plans.json   # [{date, subject, task_type, duration, difficulty, completion_status}]
+counters.json      # {course_counter, deadline_counter}
 ```
+
+All data is automatically serialized to JSON on disk when courses, deadlines, or study plans are modified. Data is loaded on startup to restore the previous session state.
 
 ## Future Improvements (Chunks 2+)
 - SQLite database integration for persistence
@@ -80,14 +85,21 @@ study_plans = [{date, subject, task_type, duration, difficulty, completion_statu
 ## Project Structure
 ```
 automated_study_planner/
-├── main.py              # Main CLI application
+├── main.py              # Main CLI application with persistent storage
+├── models.py            # Data classes (Course, Deadline, StudySession) and StorageManager
 ├── requirements.txt     # Python dependencies
-├── README.md           # This file
-└── venv/               # Virtual environment (excluded from git)
+├── README.md            # This file
+├── data/                # JSON storage directory (auto-created)
+│   ├── courses.json
+│   ├── deadlines.json
+│   ├── study_plans.json
+│   └── counters.json
+└── venv/                # Virtual environment (excluded from git)
 ```
 
 ## Git History
-- **Commit 1**: Initial CLI prototype with core functionality
+- **Chunk 1**: Initial CLI prototype with core functionality
+- **Chunk 2**: Refactored with persistent JSON storage and dataclasses
 
 ---
-**Version**: 0.1.0 (Chunk 1 - CLI Prototype)
+**Version**: 0.2.0 (Chunk 2 - Persistent Storage)
