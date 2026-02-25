@@ -1,0 +1,170 @@
+/* Custom styles for Study Planner */
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    flex: 1;
+}
+
+.footer {
+    margin-top: auto;
+}
+
+/* Dashboard Stats Cards */
+.card {
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Course Cards */
+.course-card {
+    border-left: 4px solid #0d6efd;
+    min-height: 150px;
+}
+
+/* Session Rows with Color Coding */
+.session-row {
+    transition: background-color 0.3s ease;
+}
+
+.session-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-left: 4px solid #dc3545;
+}
+
+.session-warning {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 4px solid #ffc107;
+}
+
+.session-success {
+    background-color: rgba(25, 135, 84, 0.1);
+    border-left: 4px solid #198754;
+}
+
+.session-completed {
+    background-color: rgba(108, 117, 125, 0.05);
+    opacity: 0.7;
+}
+
+/* Deadline Rows */
+.deadline-row {
+    transition: background-color 0.3s ease;
+}
+
+.deadline-danger {
+    background-color: rgba(220, 53, 69, 0.1);
+    border-left: 4px solid #dc3545;
+}
+
+.deadline-warning {
+    background-color: rgba(255, 193, 7, 0.1);
+    border-left: 4px solid #ffc107;
+}
+
+.deadline-success {
+    background-color: rgba(25, 135, 84, 0.1);
+    border-left: 4px solid #198754;
+}
+
+/* Badge Styling */
+.date-badge {
+    font-size: 0.9rem;
+    padding: 0.5rem 0.75rem;
+    font-weight: bold;
+}
+
+.difficulty-badge {
+    font-size: 1.2rem;
+    letter-spacing: 2px;
+}
+
+/* Buttons */
+.btn {
+    border-radius: 8px;
+    font-weight: 500;
+}
+
+/* Navbar */
+.navbar-brand {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+/* Tables */
+.table {
+    margin-top: 1rem;
+}
+
+.table thead {
+    font-weight: 600;
+}
+
+/* Forms */
+.form-control, .form-select {
+    border-radius: 8px;
+    border: 2px solid #e0e0e0;
+    padding: 0.75rem;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: #0d6efd;
+    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
+/* Alert Messages */
+.alert {
+    border-radius: 10px;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .display-4 {
+        font-size: 2rem;
+    }
+    
+    .table-responsive {
+        font-size: 0.9rem;
+    }
+    
+    .difficulty-badge {
+        font-size: 1rem;
+    }
+}
+
+/* Animation for hover effects */
+.session-row:hover, .deadline-row:hover {
+    transform: scale(1.01);
+    transition: transform 0.2s ease;
+}
+
+/* Color-coded badges enhancement */
+.bg-danger {
+    background-color: #dc3545 !important;
+}
+
+.bg-warning {
+    background-color: #ffc107 !important;
+}
+
+.bg-success {
+    background-color: #198754 !important;
+}
+
+/* Completed badge style */
+.badge.bg-success {
+    font-size: 0.9rem;
+}

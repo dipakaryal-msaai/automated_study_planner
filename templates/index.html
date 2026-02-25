@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="display-4">📋 Study Plan Dashboard</h1>
+            <form method="POST" action="{{ url_for('generate_plan') }}">
+                <button type="submit" class="btn btn-primary btn-lg">
+                    ✨ Generate Study Plan
+                </button>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stats -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h2 class="display-4">{{ courses|length }}</h2>
+                <p class="mb-0">Total Courses</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-warning text-white">
+            <div class="card-body text-center">
+                <h2 class="display-4">{{ deadlines|length }}</h2>
+                <p class="mb-0">Active Deadlines</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h2 class="display-4">{{ upcoming_plans|length }}</h2>
+                <p class="mb-0">Upcoming Sessions</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upcoming Study Sessions -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h2>📅 Upcoming Study Sessions</h2>
+        {% if upcoming_plans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Subject</th>
+                            <th>Task Type</th>
+                            <th>Duration</th>
+                            <th>Difficulty</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for plan in upcoming_plans %}
+                        <tr class="session-row session-{{ plan.color }}">
+                            <td>
+                                <span class="badge bg-{{ plan.color }} date-badge">
+                                    {{ plan.date }}
+                                </span>
+                            </td>
+                            <td><strong>{{ plan.subject }}</strong></td>
+                            <td>
+                                <span class="badge bg-secondary">{{ plan.task_type }}</span>
+                            </td>
+                            <td>{{ plan.duration }} min</td>
+                            <td>
+                                <span class="difficulty-badge">
+                                    {% for i in range(plan.difficulty) %}⭐{% endfor %}
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark">Pending</span>
+                            </td>
+                            <td>
+                                <form method="POST" action="{{ url_for('complete_session', session_index=loop.index0) }}" style="display: inline;">
+                                    <button type="submit" class="btn btn-sm btn-success">
+                                        ✓ Complete
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="alert alert-info">
+                <p class="mb-0">
+                    No study sessions scheduled. 
+                    <a href="{{ url_for('add_course') }}" class="alert-link">Add courses</a> and 
+                    <a href="{{ url_for('add_deadline') }}" class="alert-link">deadlines</a>, 
+                    then generate a study plan!
+                </p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Completed Sessions -->
+{% if completed_plans %}
+<div class="row">
+    <div class="col-md-12">
+        <h2>✅ Completed Sessions</h2>
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Subject</th>
+                        <th>Task Type</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plan in completed_plans %}
+                    <tr class="session-completed">
+                        <td>{{ plan.date }}</td>
+                        <td>{{ plan.subject }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ plan.task_type }}</span>
+                        </td>
+                        <td>{{ plan.duration }} min</td>
+                        <td>
+                            <span class="badge bg-success">Completed ✓</span>
+                        </td>
+                        <td>
+                            <form method="POST" action="{{ url_for('uncomplete_session', session_index=loop.index0 + upcoming_plans|length) }}" style="display: inline;">
+                                <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                    ↺ Undo
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Color Legend -->
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">📊 Color Legend</h5>
+                <div class="d-flex gap-3">
+                    <span class="badge bg-danger">Red: ≤ 3 days or past deadline</span>
+                    <span class="badge bg-warning text-dark">Yellow: ≤ 7 days</span>
+                    <span class="badge bg-success">Green: > 7 days</span>
+                    <span class="badge bg-secondary">Gray: Completed</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

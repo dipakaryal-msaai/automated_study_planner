@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block title %}Add Deadline - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h1 class="display-4 mb-4">📅 Add New Deadline</h1>
+        
+        {% if courses %}
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('add_deadline') }}">
+                    <div class="mb-3">
+                        <label for="course_id" class="form-label">Select Course *</label>
+                        <select class="form-select" id="course_id" name="course_id" required>
+                            <option value="">-- Choose a course --</option>
+                            {% for course_id, course in courses.items() %}
+                                <option value="{{ course_id }}">{{ course.name }} (Difficulty: {{ course.difficulty_level }}/5)</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="task_type" class="form-label">Task Type *</label>
+                        <select class="form-select" id="task_type" name="task_type" required>
+                            <option value="Exam">📝 Exam</option>
+                            <option value="Assignment">📄 Assignment</option>
+                            <option value="Quiz">❓ Quiz</option>
+                            <option value="Project">🎯 Project</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="due_date" class="form-label">Due Date *</label>
+                        <input type="date" class="form-control" id="due_date" name="due_date" required>
+                        <small class="form-text text-muted">
+                            Choose a future date
+                        </small>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">Add Deadline</button>
+                        <a href="{{ url_for('view_deadlines') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-warning">
+            <h4 class="alert-heading">No Courses Available</h4>
+            <p>You need to add courses before creating deadlines.</p>
+            <hr>
+            <a href="{{ url_for('add_course') }}" class="btn btn-primary">Add a Course First</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

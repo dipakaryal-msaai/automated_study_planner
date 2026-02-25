@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Deadline - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6 offset-md-3">
+        <h1 class="display-4 mb-4">✏️ Edit Deadline</h1>
+        
+        <div class="card">
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <strong>Course:</strong> {{ course.name if course else 'Unknown' }}
+                </div>
+                
+                <form method="POST" action="{{ url_for('edit_deadline', deadline_id=deadline_id) }}">
+                    <div class="mb-3">
+                        <label for="task_type" class="form-label">Task Type *</label>
+                        <select class="form-select" id="task_type" name="task_type" required>
+                            <option value="Exam" {% if deadline.task_type == 'Exam' %}selected{% endif %}>📝 Exam</option>
+                            <option value="Assignment" {% if deadline.task_type == 'Assignment' %}selected{% endif %}>📄 Assignment</option>
+                            <option value="Quiz" {% if deadline.task_type == 'Quiz' %}selected{% endif %}>❓ Quiz</option>
+                            <option value="Project" {% if deadline.task_type == 'Project' %}selected{% endif %}>🎯 Project</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="due_date" class="form-label">Due Date *</label>
+                        <input type="date" 
+                               class="form-control" 
+                               id="due_date" 
+                               name="due_date" 
+                               value="{{ deadline.due_date }}"
+                               required>
+                        <small class="form-text text-muted">
+                            Current: {{ deadline.due_date }} - Change to any date (past or future)
+                        </small>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <strong>⚠️ Note:</strong> Editing this deadline will not automatically update your existing study plan. 
+                        You may need to regenerate the study plan after making changes.
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">💾 Save Changes</button>
+                        <a href="{{ url_for('view_deadlines') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
