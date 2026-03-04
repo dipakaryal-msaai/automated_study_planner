@@ -5,30 +5,27 @@ Web interface for managing courses, deadlines, and generating study plans.
 
 from flask import Flask, render_template, request, redirect, url_for, flash
 from datetime import datetime, timedelta
-from models import Course, Deadline, StudySession, StorageManager
+from database import DatabaseManager
+from models import Course, Deadline, StudySession
 
 app = Flask(__name__)
 app.secret_key = 'study_planner_secret_key_2024'
 
-# Initialize storage manager
-storage = StorageManager()
+# Initialize database manager
+db = DatabaseManager()
 
 
 def load_data():
-    """Load all data from storage."""
-    courses = storage.load_courses()
-    deadlines = storage.load_deadlines()
-    study_plans = storage.load_study_plans()
-    counters = storage.load_counters()
-    return courses, deadlines, study_plans, counters
+    """Load all data from database."""
+    courses = db.get_all_courses()
+    deadlines = db.get_all_deadlines()
+    study_plans = db.get_all_study_sessions()
+    return courses, deadlines, study_plans
 
 
-def save_data(courses, deadlines, study_plans, counters):
-    """Save all data to storage."""
-    storage.save_courses(courses)
-    storage.save_deadlines(deadlines)
-    storage.save_study_plans(study_plans)
-    storage.save_counters(counters)
+def save_study_plans(study_plans):
+    """Save study plans to database."""
+    db.save_study_sessions(study_plans)
 
 
 def get_deadline_color(due_date_str, completion_status):
@@ -137,11 +134,12 @@ def distribute_sessions(start_date, end_date, num_sessions):
 @app.route('/')
 def index():
     """Dashboard - Display study plan overview."""
-    courses, deadlines, study_plans, _ = load_data()
+    courses, deadlines, study_plans = load_data()
     
-    # Add color coding to study plans
-    for plan in study_plans:
+    # Add color coding and original index to study plans
+    for i, plan in enumerate(study_plans):
         plan.color = get_deadline_color(plan.date, plan.completion_status)
+        plan.original_index = i  # Store the original index in full list
     
     # Separate plans into upcoming and completed
     upcoming_plans = [p for p in study_plans if not p.completion_status]
@@ -159,7 +157,7 @@ def index():
 @app.route('/courses')
 def view_courses():
     """Display all courses."""
-    courses, _, _, _ = load_data()
+    courses, _, _ = load_data()
     return render_template('courses.html', courses=courses)
 
 
@@ -183,20 +181,11 @@ def add_course():
             flash('Invalid difficulty level.', 'danger')
             return redirect(url_for('add_course'))
         
-        courses, deadlines, study_plans, counters = load_data()
-        
-        course_counter = counters.get('course_counter', 0) + 1
-        course_id = course_counter
-        
-        courses[course_id] = Course(
-            course_id=course_id,
+        db.add_course(
             name=name,
             difficulty_level=difficulty,
             added_date=datetime.now().strftime("%Y-%m-%d")
         )
-        
-        counters['course_counter'] = course_counter
-        save_data(courses, deadlines, study_plans, counters)
         
         flash(f'Course "{name}" added successfully!', 'success')
         return redirect(url_for('view_courses'))
@@ -207,7 +196,7 @@ def add_course():
 @app.route('/deadlines')
 def view_deadlines():
     """Display all deadlines."""
-    courses, deadlines, _, _ = load_data()
+    courses, deadlines, _ = load_data()
     
     # Add course names to deadlines for display
     deadline_list = []
@@ -239,7 +228,7 @@ def view_deadlines():
 @app.route('/deadlines/add', methods=['GET', 'POST'])
 def add_deadline():
     """Add a new deadline."""
-    courses, deadlines, study_plans, counters = load_data()
+    courses, _, _ = load_data()
     
     if request.method == 'POST':
         course_id_str = request.form.get('course_id', '')
@@ -270,20 +259,17 @@ def add_deadline():
             flash('Task type cannot be empty.', 'danger')
             return redirect(url_for('add_deadline'))
         
-        deadline_counter = counters.get('deadline_counter', 0) + 1
-        deadline_id = deadline_counter
-        
-        deadlines[deadline_id] = Deadline(
-            deadline_id=deadline_id,
+        deadline = db.add_deadline(
             course_id=course_id,
             due_date=due_date_str,
             task_type=task_type
         )
         
-        counters['deadline_counter'] = deadline_counter
-        save_data(courses, deadlines, study_plans, counters)
+        if deadline:
+            flash(f'Deadline added for {courses[course_id].name}!', 'success')
+        else:
+            flash('Failed to add deadline.', 'danger')
         
-        flash(f'Deadline added for {courses[course_id].name}!', 'success')
         return redirect(url_for('view_deadlines'))
     
     return render_template('add_deadline.html', courses=courses)
@@ -292,14 +278,14 @@ def add_deadline():
 @app.route('/study-plan/generate', methods=['POST'])
 def generate_plan():
     """Generate a new study plan."""
-    courses, deadlines, _, counters = load_data()
+    courses, deadlines, _ = load_data()
     
     if not deadlines:
         flash('Add deadlines before generating a study plan.', 'warning')
         return redirect(url_for('index'))
     
     study_plans = generate_study_plan_logic(courses, deadlines)
-    save_data(courses, deadlines, study_plans, counters)
+    save_study_plans(study_plans)
     
     flash(f'Study plan generated with {len(study_plans)} sessions!', 'success')
     return redirect(url_for('index'))
@@ -308,11 +294,9 @@ def generate_plan():
 @app.route('/study-plan/complete/<int:session_index>', methods=['POST'])
 def complete_session(session_index):
     """Mark a study session as complete."""
-    courses, deadlines, study_plans, counters = load_data()
+    success = db.update_study_session_status(session_index, True)
     
-    if 0 <= session_index < len(study_plans):
-        study_plans[session_index].completion_status = True
-        save_data(courses, deadlines, study_plans, counters)
+    if success:
         flash('Session marked as complete!', 'success')
     else:
         flash('Invalid session.', 'danger')
@@ -323,11 +307,9 @@ def complete_session(session_index):
 @app.route('/study-plan/uncomplete/<int:session_index>', methods=['POST'])
 def uncomplete_session(session_index):
     """Mark a study session as incomplete."""
-    courses, deadlines, study_plans, counters = load_data()
+    success = db.update_study_session_status(session_index, False)
     
-    if 0 <= session_index < len(study_plans):
-        study_plans[session_index].completion_status = False
-        save_data(courses, deadlines, study_plans, counters)
+    if success:
         flash('Session marked as incomplete.', 'info')
     else:
         flash('Invalid session.', 'danger')
@@ -338,7 +320,7 @@ def uncomplete_session(session_index):
 @app.route('/deadlines/edit/<int:deadline_id>', methods=['GET', 'POST'])
 def edit_deadline(deadline_id):
     """Edit an existing deadline."""
-    courses, deadlines, study_plans, counters = load_data()
+    courses, deadlines, _ = load_data()
     
     if deadline_id not in deadlines:
         flash('Deadline not found.', 'danger')
@@ -359,11 +341,13 @@ def edit_deadline(deadline_id):
             return redirect(url_for('edit_deadline', deadline_id=deadline_id))
         
         # Update deadline
-        deadlines[deadline_id].due_date = due_date_str
-        deadlines[deadline_id].task_type = task_type
-        save_data(courses, deadlines, study_plans, counters)
+        success = db.update_deadline(deadline_id, due_date=due_date_str, task_type=task_type)
         
-        flash(f'Deadline updated successfully!', 'success')
+        if success:
+            flash(f'Deadline updated successfully!', 'success')
+        else:
+            flash('Failed to update deadline.', 'danger')
+        
         return redirect(url_for('view_deadlines'))
     
     deadline = deadlines[deadline_id]
@@ -378,13 +362,16 @@ def edit_deadline(deadline_id):
 @app.route('/deadlines/delete/<int:deadline_id>', methods=['POST'])
 def delete_deadline(deadline_id):
     """Delete a deadline."""
-    courses, deadlines, study_plans, counters = load_data()
+    courses, deadlines, _ = load_data()
     
     if deadline_id in deadlines:
         course_name = courses[deadlines[deadline_id].course_id].name if deadlines[deadline_id].course_id in courses else "Unknown"
-        del deadlines[deadline_id]
-        save_data(courses, deadlines, study_plans, counters)
-        flash(f'Deadline for {course_name} deleted.', 'info')
+        success = db.delete_deadline(deadline_id)
+        
+        if success:
+            flash(f'Deadline for {course_name} deleted.', 'info')
+        else:
+            flash('Failed to delete deadline.', 'danger')
     else:
         flash('Deadline not found.', 'danger')
     

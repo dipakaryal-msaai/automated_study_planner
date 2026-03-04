@@ -84,7 +84,7 @@
                                 <span class="badge bg-light text-dark">Pending</span>
                             </td>
                             <td>
-                                <form method="POST" action="{{ url_for('complete_session', session_index=loop.index0) }}" style="display: inline;">
+                                <form method="POST" action="{{ url_for('complete_session', session_index=plan.original_index) }}" style="display: inline;">
                                     <button type="submit" class="btn btn-sm btn-success">
                                         ✓ Complete
                                     </button>
@@ -138,7 +138,7 @@
                             <span class="badge bg-success">Completed ✓</span>
                         </td>
                         <td>
-                            <form method="POST" action="{{ url_for('uncomplete_session', session_index=loop.index0 + upcoming_plans|length) }}" style="display: inline;">
+                            <form method="POST" action="{{ url_for('uncomplete_session', session_index=plan.original_index) }}" style="display: inline;">
                                 <button type="submit" class="btn btn-sm btn-outline-secondary">
                                     ↺ Undo
                                 </button>

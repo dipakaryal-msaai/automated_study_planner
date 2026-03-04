@@ -5,24 +5,20 @@ Main application file for managing courses, deadlines, and generating study plan
 
 from tabulate import tabulate
 from datetime import datetime, timedelta
-from models import Course, Deadline, StudySession, StorageManager
+from database import DatabaseManager
+from models import Course, Deadline, StudySession
 
 
 class StudyPlanner:
-    """CLI-based study planner with persistent JSON storage."""
+    """CLI-based study planner with persistent database storage."""
     
     def __init__(self):
-        self.storage = StorageManager()
+        self.db = DatabaseManager()
         
         # Load persisted data
-        self.courses = self.storage.load_courses()
-        self.deadlines = self.storage.load_deadlines()
-        self.study_plans = self.storage.load_study_plans()
-        
-        # Load counters to maintain ID continuity
-        counters = self.storage.load_counters()
-        self.course_counter = counters.get("course_counter", 0)
-        self.deadline_counter = counters.get("deadline_counter", 0)
+        self.courses = self.db.get_all_courses()
+        self.deadlines = self.db.get_all_deadlines()
+        self.study_plans = self.db.get_all_study_sessions()
     
     def add_course(self, name, difficulty_level):
         """Add a new course. Difficulty 1-5."""
@@ -30,17 +26,14 @@ class StudyPlanner:
             print("❌ Difficulty level must be between 1 and 5.")
             return
         
-        self.course_counter += 1
-        course_id = self.course_counter
-        self.courses[course_id] = Course(
-            course_id=course_id,
+        course = self.db.add_course(
             name=name,
             difficulty_level=difficulty_level,
             added_date=datetime.now().strftime("%Y-%m-%d")
         )
-        self._save_data()
-        print(f"✅ Course '{name}' added with ID {course_id} (Difficulty: {difficulty_level}/5)")
-        return course_id
+        self.courses = self.db.get_all_courses()
+        print(f"✅ Course '{name}' added with ID {course.course_id} (Difficulty: {difficulty_level}/5)")
+        return course.course_id
     
     def add_deadline(self, course_id, due_date_str, task_type):
         """Add a deadline for a course. Date format: YYYY-MM-DD."""
@@ -58,17 +51,19 @@ class StudyPlanner:
             print("❌ Due date must be in the future.")
             return
         
-        self.deadline_counter += 1
-        deadline_id = self.deadline_counter
-        self.deadlines[deadline_id] = Deadline(
-            deadline_id=deadline_id,
+        deadline = self.db.add_deadline(
             course_id=course_id,
             due_date=due_date_str,
             task_type=task_type
         )
-        self._save_data()
-        print(f"✅ Deadline added: {self.courses[course_id].name} - {task_type} due {due_date_str}")
-        return deadline_id
+        
+        if deadline:
+            self.deadlines = self.db.get_all_deadlines()
+            print(f"✅ Deadline added: {self.courses[course_id].name} - {task_type} due {due_date_str}")
+            return deadline.deadline_id
+        else:
+            print(f"❌ Failed to add deadline.")
+            return None
     
     def generate_study_plan(self, start_date_str=None):
         """Generate a basic study plan based on courses and deadlines."""
@@ -128,7 +123,7 @@ class StudyPlanner:
         
         # Sort by date
         self.study_plans.sort(key=lambda x: x.date)
-        self._save_data()
+        self.db.save_study_sessions(self.study_plans)
         print(f"✅ Study plan generated with {len(self.study_plans)} sessions.")
     
     def _distribute_sessions(self, start_date, end_date, num_sessions):
@@ -210,21 +205,14 @@ class StudyPlanner:
     def mark_session_complete(self, session_index):
         """Mark a study session as complete."""
         if 0 <= session_index < len(self.study_plans):
-            self.study_plans[session_index].completion_status = True
-            self._save_data()
-            print(f"✅ Session marked as complete: {self.study_plans[session_index].subject}")
+            success = self.db.update_study_session_status(session_index, True)
+            if success:
+                self.study_plans = self.db.get_all_study_sessions()
+                print(f"✅ Session marked as complete: {self.study_plans[session_index].subject}")
+            else:
+                print("❌ Failed to update session.")
         else:
             print("❌ Invalid session index.")
-    
-    def _save_data(self):
-        """Save all data to persistent storage."""
-        self.storage.save_courses(self.courses)
-        self.storage.save_deadlines(self.deadlines)
-        self.storage.save_study_plans(self.study_plans)
-        self.storage.save_counters({
-            "course_counter": self.course_counter,
-            "deadline_counter": self.deadline_counter
-        })
     
     def interactive_menu(self):
         """Run the interactive CLI menu."""
