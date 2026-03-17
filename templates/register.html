@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}Register – Study Planner{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card shadow-sm">
+            <div class="card-body p-4">
+                <h3 class="card-title text-center mb-4">📝 Create Account</h3>
+
+                <form method="POST" action="{{ url_for('auth_register') }}">
+                    <div class="row mb-3">
+                        <div class="col">
+                            <label for="first_name" class="form-label">First Name</label>
+                            <input type="text" class="form-control" id="first_name" name="first_name"
+                                   required autofocus placeholder="Jane">
+                        </div>
+                        <div class="col">
+                            <label for="last_name" class="form-label">Last Name</label>
+                            <input type="text" class="form-control" id="last_name" name="last_name"
+                                   required placeholder="Smith">
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Email address</label>
+                        <input type="email" class="form-control" id="email" name="email"
+                               required placeholder="you@example.com">
+                    </div>
+                    <div class="mb-3">
+                        <label for="password" class="form-label">Password</label>
+                        <input type="password" class="form-control" id="password" name="password"
+                               required placeholder="Minimum 8 characters">
+                        <div class="form-text">Must be at least 8 characters.</div>
+                    </div>
+                    <div class="mb-4">
+                        <label for="confirm_password" class="form-label">Confirm Password</label>
+                        <input type="password" class="form-control" id="confirm_password"
+                               name="confirm_password" required placeholder="Repeat password">
+                    </div>
+                    <div class="d-grid mb-3">
+                        <button type="submit" class="btn btn-success btn-lg">Create Account</button>
+                    </div>
+                </form>
+
+                <hr>
+                <p class="text-center mb-2">
+                    Already have an account?
+                    <a href="{{ url_for('auth_login') }}">Log in here</a>
+                </p>
+                <p class="text-center">
+                    <a href="{{ url_for('enter_guest') }}" class="text-muted small">
+                        Continue as guest (data won't be saved)
+                    </a>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

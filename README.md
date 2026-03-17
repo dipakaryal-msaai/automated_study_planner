@@ -1,20 +1,23 @@
-# Automated Study Planner - Flask Web App (Chunk 1-4)
+# Automated Study Planner - Flask Web App (Chunk 1-5)
 
 ## Overview
-A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, and intelligent study plan generation with color-coded priority visualization.
+A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, and intelligent study plan generation with color-coded priority visualization. Supports user authentication with full guest-mode exploration.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
 - ✅ Add deadlines for courses (Exam, Assignment, Quiz, Project)
 - ✅ Automatically generate personalized study plans
 - ✅ Track completion status of study sessions
-- ✅ **SQLite Database Storage** - Robust database with CRUD operations (NEW in Chunk 4)
-- ✅ **PostgreSQL Support** - Production-ready for Heroku deployment (NEW in Chunk 4)
-- ✅ **Migration Tool** - Easy JSON-to-SQLite data migration (NEW in Chunk 4)
+- ✅ **SQLite Database Storage** - Robust database with CRUD operations (Chunk 4)
+- ✅ **PostgreSQL Support** - Production-ready for Heroku deployment (Chunk 4)
+- ✅ **Migration Tool** - Easy JSON-to-SQLite data migration (Chunk 4)
 - ✅ **Cross-session state** - All data persists across application restarts
 - ✅ **Flask Web Interface** - Beautiful, responsive web UI with Bootstrap 5
 - ✅ **Color-coded deadlines** - Visual priority system (Red ≤3 days, Yellow ≤7 days, Green >7 days)
 - ✅ **CLI Interface** - Command-line option still available
+- ✅ **User Authentication** - Register, login, logout with secure password hashing (NEW in Chunk 5)
+- ✅ **Multi-user isolation** - Each user sees only their own courses, deadlines, and study plans (NEW in Chunk 5)
+- ✅ **Guest Mode** - Explore all features without registering; data is session-only with clear warnings (NEW in Chunk 5)
 
 ## Setup
 
@@ -77,12 +80,14 @@ python main.py
 ```
 
 ### Web Interface Features
+- **Landing Page** - Redirects to Login; guests can click "Continue as guest"
 - **Dashboard** - Overview with stats cards and color-coded study sessions
 - **Courses Page** - View all courses with difficulty ratings (⭐)
 - **Deadlines Page** - Color-coded deadline list (Red/Yellow/Green)
 - **Add Forms** - Easy-to-use forms for adding courses and deadlines
 - **Study Plan Generation** - One-click generation with visual feedback
 - **Session Tracking** - Mark sessions complete/incomplete with undo functionality
+- **Guest Mode Banner** - Persistent warning bar with link to register
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -125,12 +130,23 @@ Colors automatically update as deadlines approach, helping you prioritize effect
 
 ### Database Schema (NEW in Chunk 4)
 ```sql
+-- users table (NEW in Chunk 5)
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT UNIQUE NOT NULL,
+    first_name TEXT NOT NULL,
+    last_name TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at DATE NOT NULL
+);
+
 -- courses table
 CREATE TABLE courses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     difficulty_level INTEGER NOT NULL CHECK(difficulty_level >= 1 AND difficulty_level <= 5),
-    added_date DATE NOT NULL
+    added_date DATE NOT NULL,
+    user_id INTEGER REFERENCES users(id)  -- NULL for legacy/pre-auth rows
 );
 
 -- deadlines table
@@ -215,14 +231,14 @@ automated_study_planner/
 - **Chunk 1**: Initial CLI prototype with core functionality
 - **Chunk 2**: Refactored with persistent JSON storage and dataclasses
 - **Chunk 3**: Flask web application with Bootstrap UI and color-coded deadlines
-- **Chunk 4**: Database migration to SQLite/PostgreSQL with SQLAlchemy ORM
+- **Chunk 5**: Authentication system (register/login/logout, multi-user data isolation, guest mode)
 
 ## Technologies Used
-- **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25
+- **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
 - **Database**: SQLite (development), PostgreSQL (production)
 - **Frontend**: HTML5, Bootstrap 5.3, Custom CSS
 - **CLI**: tabulate (for formatted tables)
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.4.0 (Chunk 4 - Database Migration Complete)
+**Version**: 0.5.0 (Chunk 5 - Authentication System Complete)

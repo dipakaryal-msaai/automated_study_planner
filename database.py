@@ -9,9 +9,36 @@ from typing import List, Dict, Optional
 from sqlalchemy import create_engine, Column, Integer, String, Date, Boolean, ForeignKey, CheckConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import UserMixin
 from models import Course, Deadline, StudySession
 
 Base = declarative_base()
+
+
+class UserModel(Base, UserMixin):
+    """SQLAlchemy model for users table."""
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(String, unique=True, nullable=False)
+    first_name = Column(String, nullable=False)
+    last_name = Column(String, nullable=False)
+    password_hash = Column(String, nullable=False)
+    created_at = Column(Date, nullable=False)
+
+    courses = relationship("CourseModel", back_populates="user", cascade="all, delete-orphan",
+                           foreign_keys="CourseModel.user_id")
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        return check_password_hash(self.password_hash, password)
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.first_name} {self.last_name}"
 
 
 class CourseModel(Base):
@@ -22,8 +49,10 @@ class CourseModel(Base):
     name = Column(String, nullable=False)
     difficulty_level = Column(Integer, nullable=False)
     added_date = Column(Date, nullable=False)
-    
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+
     deadlines = relationship("DeadlineModel", back_populates="course", cascade="all, delete-orphan")
+    user = relationship("UserModel", back_populates="courses", foreign_keys=[user_id])
     
     __table_args__ = (
         CheckConstraint('difficulty_level >= 1 AND difficulty_level <= 5', name='check_difficulty'),
@@ -47,6 +76,7 @@ class DeadlineModel(Base):
     course_id = Column(Integer, ForeignKey('courses.id'), nullable=False)
     due_date = Column(Date, nullable=False)
     task_type = Column(String, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     
     course = relationship("CourseModel", back_populates="deadlines")
     
@@ -71,6 +101,7 @@ class StudySessionModel(Base):
     duration = Column(Integer, nullable=False)
     difficulty = Column(Integer, nullable=False)
     completion_status = Column(Boolean, default=False, nullable=False)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
     
     def to_dataclass(self) -> StudySession:
         """Convert SQLAlchemy model to dataclass."""
@@ -121,7 +152,26 @@ class DatabaseManager:
         
         self.engine = create_engine(database_url)
         Base.metadata.create_all(self.engine)
+        self._migrate_add_user_columns()
         self.Session = sessionmaker(bind=self.engine)
+
+    def _migrate_add_user_columns(self) -> None:
+        """Add user_id columns to existing tables if they don't exist (SQLite migration)."""
+        with self.engine.connect() as conn:
+            for table, col_def in [
+                ('courses', 'user_id INTEGER REFERENCES users(id)'),
+                ('deadlines', 'user_id INTEGER REFERENCES users(id)'),
+                ('study_sessions', 'user_id INTEGER REFERENCES users(id)'),
+            ]:
+                try:
+                    conn.execute(
+                        __import__('sqlalchemy').text(
+                            f'ALTER TABLE {table} ADD COLUMN {col_def}'
+                        )
+                    )
+                    conn.commit()
+                except Exception:
+                    pass  # Column already exists
     
     def get_session(self):
         """Get a new database session."""
@@ -129,14 +179,16 @@ class DatabaseManager:
     
     # ==================== COURSE CRUD OPERATIONS ====================
     
-    def add_course(self, name: str, difficulty_level: int, added_date: str) -> Course:
+    def add_course(self, name: str, difficulty_level: int, added_date: str,
+                   user_id: Optional[int] = None) -> Course:
         """Add a new course to the database."""
         session = self.get_session()
         try:
             course_model = CourseModel(
                 name=name,
                 difficulty_level=difficulty_level,
-                added_date=datetime.strptime(added_date, "%Y-%m-%d").date()
+                added_date=datetime.strptime(added_date, "%Y-%m-%d").date(),
+                user_id=user_id
             )
             session.add(course_model)
             session.commit()
@@ -154,11 +206,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_all_courses(self) -> Dict[int, Course]:
-        """Get all courses as a dictionary keyed by course_id."""
+    def get_all_courses(self, user_id: Optional[int] = None) -> Dict[int, Course]:
+        """Get courses filtered by user_id (or all if None)."""
         session = self.get_session()
         try:
-            courses = session.query(CourseModel).all()
+            query = session.query(CourseModel)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            courses = query.all()
             return {course.id: course.to_dataclass() for course in courses}
         finally:
             session.close()
@@ -198,7 +253,8 @@ class DatabaseManager:
     
     # ==================== DEADLINE CRUD OPERATIONS ====================
     
-    def add_deadline(self, course_id: int, due_date: str, task_type: str) -> Optional[Deadline]:
+    def add_deadline(self, course_id: int, due_date: str, task_type: str,
+                     user_id: Optional[int] = None) -> Optional[Deadline]:
         """Add a new deadline to the database."""
         session = self.get_session()
         try:
@@ -210,7 +266,8 @@ class DatabaseManager:
             deadline_model = DeadlineModel(
                 course_id=course_id,
                 due_date=datetime.strptime(due_date, "%Y-%m-%d").date(),
-                task_type=task_type
+                task_type=task_type,
+                user_id=user_id
             )
             session.add(deadline_model)
             session.commit()
@@ -227,11 +284,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_all_deadlines(self) -> Dict[int, Deadline]:
-        """Get all deadlines as a dictionary keyed by deadline_id."""
+    def get_all_deadlines(self, user_id: Optional[int] = None) -> Dict[int, Deadline]:
+        """Get deadlines filtered by user_id (or all if None)."""
         session = self.get_session()
         try:
-            deadlines = session.query(DeadlineModel).all()
+            query = session.query(DeadlineModel)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            deadlines = query.all()
             return {deadline.id: deadline.to_dataclass() for deadline in deadlines}
         finally:
             session.close()
@@ -291,21 +351,27 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_all_study_sessions(self) -> List[StudySession]:
-        """Get all study sessions sorted by date."""
+    def get_all_study_sessions(self, user_id: Optional[int] = None) -> List[StudySession]:
+        """Get study sessions sorted by date, optionally filtered by user_id."""
         session = self.get_session()
         try:
-            sessions = session.query(StudySessionModel).order_by(StudySessionModel.date).all()
+            query = session.query(StudySessionModel).order_by(StudySessionModel.date)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            sessions = query.all()
             return [s.to_dataclass() for s in sessions]
         finally:
             session.close()
     
-    def update_study_session_status(self, session_index: int, completion_status: bool) -> bool:
-        """Update completion status of a study session by index."""
+    def update_study_session_status(self, session_index: int, completion_status: bool,
+                                     user_id: Optional[int] = None) -> bool:
+        """Update completion status of a study session by index (within user scope)."""
         session = self.get_session()
         try:
-            # Get all sessions sorted by date
-            sessions = session.query(StudySessionModel).order_by(StudySessionModel.date).all()
+            query = session.query(StudySessionModel).order_by(StudySessionModel.date)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            sessions = query.all()
             
             if 0 <= session_index < len(sessions):
                 sessions[session_index].completion_status = completion_status
@@ -324,12 +390,16 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def save_study_sessions(self, study_sessions: List[StudySession]) -> None:
-        """Replace all study sessions with a new list."""
+    def save_study_sessions(self, study_sessions: List[StudySession],
+                             user_id: Optional[int] = None) -> None:
+        """Replace all study sessions (for user) with a new list."""
         session = self.get_session()
         try:
-            # Delete existing sessions
-            session.query(StudySessionModel).delete()
+            # Delete existing sessions for this user (or all if no user)
+            query = session.query(StudySessionModel)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            query.delete()
             
             # Add new sessions
             for study_session in study_sessions:
@@ -339,7 +409,8 @@ class DatabaseManager:
                     task_type=study_session.task_type,
                     duration=study_session.duration,
                     difficulty=study_session.difficulty,
-                    completion_status=study_session.completion_status
+                    completion_status=study_session.completion_status,
+                    user_id=user_id
                 )
                 session.add(session_model)
             
@@ -347,6 +418,53 @@ class DatabaseManager:
         finally:
             session.close()
     
+    # ==================== USER CRUD OPERATIONS ====================
+
+    def create_user(self, email: str, first_name: str, last_name: str,
+                    password: str) -> Optional['UserModel']:
+        """Create a new user with hashed password. Returns None if email already exists."""
+        session = self.get_session()
+        try:
+            if session.query(UserModel).filter_by(email=email.lower()).first():
+                return None  # Email already taken
+            user = UserModel(
+                email=email.lower(),
+                first_name=first_name,
+                last_name=last_name,
+                created_at=datetime.now().date()
+            )
+            user.set_password(password)
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+            # Detach so the object can be used outside this session
+            session.expunge(user)
+            return user
+        finally:
+            session.close()
+
+    def get_user_by_email(self, email: str) -> Optional['UserModel']:
+        """Look up a user by email address."""
+        session = self.get_session()
+        try:
+            user = session.query(UserModel).filter_by(email=email.lower()).first()
+            if user:
+                session.expunge(user)
+            return user
+        finally:
+            session.close()
+
+    def get_user_by_id(self, user_id: int) -> Optional['UserModel']:
+        """Look up a user by primary key."""
+        session = self.get_session()
+        try:
+            user = session.query(UserModel).filter_by(id=user_id).first()
+            if user:
+                session.expunge(user)
+            return user
+        finally:
+            session.close()
+
     # ==================== METADATA OPERATIONS ====================
     
     def get_metadata(self, key: str, default: str = None) -> Optional[str]:

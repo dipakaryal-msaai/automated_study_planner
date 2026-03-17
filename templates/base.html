@@ -17,7 +17,7 @@
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
+                <ul class="navbar-nav me-auto">
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('index') }}">Dashboard</a>
                     </li>
@@ -28,16 +28,46 @@
                         <a class="nav-link" href="{{ url_for('view_deadlines') }}">Deadlines</a>
                     </li>
                 </ul>
+                <ul class="navbar-nav ms-auto">
+                    {% if current_user.is_authenticated %}
+                        <li class="nav-item">
+                            <span class="navbar-text text-white me-3">
+                                👤 {{ current_user.full_name }}
+                            </span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_logout') }}">Logout</a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <span class="navbar-text badge bg-warning text-dark me-2">Guest</span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_login') }}">Login</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="btn btn-outline-light btn-sm ms-1 nav-link" href="{{ url_for('auth_register') }}">Register</a>
+                        </li>
+                    {% endif %}
+                </ul>
             </div>
         </div>
     </nav>
+
+    {% if not current_user.is_authenticated %}
+    <div class="alert alert-warning alert-dismissible fade show mb-0 rounded-0 text-center" role="alert">
+        <strong>👋 Guest Mode</strong> — Your data is temporary and will be lost when you close the browser.
+        <a href="{{ url_for('auth_register') }}" class="alert-link">Create a free account</a> to save your progress!
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
 
     <div class="container mt-4">
         {% with messages = get_flashed_messages(with_categories=true) %}
             {% if messages %}
                 {% for category, message in messages %}
                     <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-                        {{ message }}
+                        {{ message | safe }}
                         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                     </div>
                 {% endfor %}
@@ -49,7 +79,7 @@
 
     <footer class="footer mt-5 py-3 bg-light">
         <div class="container text-center text-muted">
-            <small>&copy; 2026 Automated Study Planner | Version 0.3.0 (Flask Web App)</small>
+            <small>&copy; 2026 Automated Study Planner | Version 0.5.0 (Authentication)</small>
         </div>
     </footer>
 
