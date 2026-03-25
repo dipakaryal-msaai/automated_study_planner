@@ -1,7 +1,7 @@
-# Automated Study Planner - Flask Web App (Chunk 1-5)
+# Automated Study Planner - Flask Web App (Chunk 1-6)
 
 ## Overview
-A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, and intelligent study plan generation with color-coded priority visualization. Supports user authentication with full guest-mode exploration.
+A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, and lightweight daily outbound reminders for authenticated web users.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -18,6 +18,7 @@ A comprehensive study planner application with both CLI and Web interfaces. Feat
 - ✅ **User Authentication** - Register, login, logout with secure password hashing (NEW in Chunk 5)
 - ✅ **Multi-user isolation** - Each user sees only their own courses, deadlines, and study plans (NEW in Chunk 5)
 - ✅ **Guest Mode** - Explore all features without registering; data is session-only with clear warnings (NEW in Chunk 5)
+- ✅ **Daily Summary Notifications** - Morning outbound reminders via email and optional open-source `ntfy` push (NEW in Chunk 6)
 
 ## Setup
 
@@ -73,6 +74,16 @@ python web_app.py
 ```
 Then open your browser to: **http://127.0.0.1:5000**
 
+To run notification delivery outside the web process:
+```bash
+python notification_worker.py
+```
+
+For a one-time delivery check:
+```bash
+python notification_worker.py --once
+```
+
 ### CLI Application
 For command-line interface:
 ```bash
@@ -88,6 +99,8 @@ python main.py
 - **Study Plan Generation** - One-click generation with visual feedback
 - **Session Tracking** - Mark sessions complete/incomplete with undo functionality
 - **Guest Mode Banner** - Persistent warning bar with link to register
+- **Notification Queue** - View pending, sent, and failed daily reminders
+- **Notification Settings** - Configure morning summary time and optional `ntfy` topic
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -98,6 +111,53 @@ python main.py
 6. **View Study Plan** - Display the generated study plan
 7. **Mark Session Complete** - Track completion of study sessions
 8. **Exit** - Exit the application
+
+## Daily Notification System (Chunk 6)
+
+Chunk 6 sends a single morning reminder on days when an authenticated user has study sessions scheduled.
+
+- Default delivery time: `08:00`
+- Default channel: account email
+- Optional second channel: [`ntfy`](https://ntfy.sh/), an open-source/self-hostable push notification service
+- Guest sessions do not send outbound reminders
+
+Example reminder:
+
+```text
+Hey Dipak, you have 4 study sessions coming up today.
+```
+
+### Configuration
+
+Email delivery uses standard SMTP environment variables:
+
+```bash
+export SMTP_HOST=smtp.example.com
+export SMTP_PORT=587
+export SMTP_USERNAME=you@example.com
+export SMTP_PASSWORD=your-password
+export SMTP_FROM_EMAIL=you@example.com
+```
+
+Optional `ntfy` delivery uses an open-source push server:
+
+```bash
+export NTFY_SERVER=https://ntfy.sh
+```
+
+Users can configure their personal `ntfy` topic and daily summary time from the web UI under `Settings`.
+
+### Scheduler Options
+
+The web app includes a lightweight in-process scheduler, and a standalone worker is also available.
+
+```bash
+export NOTIFICATION_SCHEDULER_ENABLED=1
+export NOTIFICATION_POLL_INTERVAL_SECONDS=60
+```
+
+- Set `NOTIFICATION_SCHEDULER_ENABLED=0` if you only want to use `notification_worker.py`
+- `NOTIFICATION_POLL_INTERVAL_SECONDS` controls how often due reminders are checked
 
 ### Example Workflow
 ```
@@ -191,12 +251,10 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 5+)
-- User authentication and multi-user support
+## Future Improvements (Chunks 6+)
 - Advanced scheduling algorithms (ML-based optimization)
-- Email/SMS notifications and reminders
-- Progress tracking and analytics dashboard
 - Calendar integration (Google Calendar, Outlook)
+- Progress tracking and analytics dashboard
 - Mobile responsive enhancements
 - REST API endpoints for mobile apps
 
@@ -204,6 +262,7 @@ Legacy JSON files in `data/` directory:
 ```
 automated_study_planner/
 ├── web_app.py           # Flask web application (Chunk 3)
+├── notification_worker.py # Standalone daily notification worker (Chunk 6)
 ├── main.py              # CLI application (original interface)
 ├── models.py            # Data classes (Course, Deadline, StudySession)
 ├── database.py          # SQLAlchemy ORM and DatabaseManager (NEW in Chunk 4)
@@ -232,6 +291,7 @@ automated_study_planner/
 - **Chunk 2**: Refactored with persistent JSON storage and dataclasses
 - **Chunk 3**: Flask web application with Bootstrap UI and color-coded deadlines
 - **Chunk 5**: Authentication system (register/login/logout, multi-user data isolation, guest mode)
+- **Chunk 6**: Daily summary notifications for authenticated web users
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
@@ -241,4 +301,4 @@ automated_study_planner/
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.5.0 (Chunk 5 - Authentication System Complete)
+**Version**: 0.6.0 (Chunk 6 - Daily Summary Notifications)

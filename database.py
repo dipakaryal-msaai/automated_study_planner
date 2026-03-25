@@ -4,16 +4,24 @@ Supports both SQLite (development) and PostgreSQL (production/Heroku).
 """
 
 import os
-from datetime import datetime
+import smtplib
+from threading import RLock
+from datetime import datetime, time
 from typing import List, Dict, Optional
-from sqlalchemy import create_engine, Column, Integer, String, Date, Boolean, ForeignKey, CheckConstraint
+from email.message import EmailMessage
+from urllib import request
+from sqlalchemy import (
+    create_engine, Column, Integer, String, Date, Boolean, ForeignKey,
+    CheckConstraint, DateTime
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import UserMixin
-from models import Course, Deadline, StudySession
+from models import Course, Deadline, StudySession, Reminder
 
 Base = declarative_base()
+DEFAULT_STUDY_TIME = '18:00'
 
 
 class UserModel(Base, UserMixin):
@@ -96,17 +104,18 @@ class StudySessionModel(Base):
     
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False)
+    start_time = Column(String(5), nullable=False, default=DEFAULT_STUDY_TIME)
     subject = Column(String, nullable=False)
     task_type = Column(String, nullable=False)
     duration = Column(Integer, nullable=False)
     difficulty = Column(Integer, nullable=False)
     completion_status = Column(Boolean, default=False, nullable=False)
     user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
-    
     def to_dataclass(self) -> StudySession:
         """Convert SQLAlchemy model to dataclass."""
         return StudySession(
             date=self.date.strftime("%Y-%m-%d"),
+            start_time=self.start_time,
             subject=self.subject,
             task_type=self.task_type,
             duration=self.duration,
@@ -121,6 +130,41 @@ class MetadataModel(Base):
     
     key = Column(String, primary_key=True)
     value = Column(String)
+
+
+class ReminderModel(Base):
+    """SQLAlchemy model for scheduled outbound daily summary reminders."""
+    __tablename__ = 'reminders'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
+    summary_date = Column(Date, nullable=False)
+    session_count = Column(Integer, nullable=False)
+    greeting_name = Column(String, nullable=False)
+    message = Column(String, nullable=False)
+    channel = Column(String, nullable=False)
+    recipient = Column(String, nullable=False)
+    scheduled_for = Column(DateTime, nullable=False)
+    status = Column(String, nullable=False, default='pending')
+    error_message = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    sent_at = Column(DateTime, nullable=True)
+
+    def to_dataclass(self) -> Reminder:
+        """Convert SQLAlchemy model to a reminder dataclass."""
+        return Reminder(
+            reminder_id=self.id,
+            summary_date=self.summary_date.strftime("%Y-%m-%d"),
+            session_count=self.session_count,
+            greeting_name=self.greeting_name,
+            message=self.message,
+            channel=self.channel,
+            recipient=self.recipient,
+            scheduled_for=self.scheduled_for.strftime("%Y-%m-%d %H:%M:%S"),
+            status=self.status,
+            sent_at=self.sent_at.strftime("%Y-%m-%d %H:%M:%S") if self.sent_at else None,
+            error_message=self.error_message
+        )
 
 
 class DatabaseManager:
@@ -149,19 +193,25 @@ class DatabaseManager:
             db_path = database_url.replace('sqlite:///', '')
             db_dir = os.path.dirname(db_path)
             os.makedirs(db_dir, exist_ok=True)
-        
-        self.engine = create_engine(database_url)
-        Base.metadata.create_all(self.engine)
-        self._migrate_add_user_columns()
-        self.Session = sessionmaker(bind=self.engine)
 
-    def _migrate_add_user_columns(self) -> None:
-        """Add user_id columns to existing tables if they don't exist (SQLite migration)."""
+        engine_kwargs = {}
+        if database_url.startswith('sqlite'):
+            engine_kwargs['connect_args'] = {'check_same_thread': False}
+
+        self.engine = create_engine(database_url, **engine_kwargs)
+        Base.metadata.create_all(self.engine)
+        self._migrate_schema_updates()
+        self.Session = sessionmaker(bind=self.engine)
+        self._notification_lock = RLock()
+
+    def _migrate_schema_updates(self) -> None:
+        """Apply lightweight SQLite migrations for newly added columns."""
         with self.engine.connect() as conn:
             for table, col_def in [
                 ('courses', 'user_id INTEGER REFERENCES users(id)'),
                 ('deadlines', 'user_id INTEGER REFERENCES users(id)'),
                 ('study_sessions', 'user_id INTEGER REFERENCES users(id)'),
+                ('study_sessions', f"start_time VARCHAR(5) NOT NULL DEFAULT '{DEFAULT_STUDY_TIME}'"),
             ]:
                 try:
                     conn.execute(
@@ -172,6 +222,18 @@ class DatabaseManager:
                     conn.commit()
                 except Exception:
                     pass  # Column already exists
+
+            try:
+                column_rows = conn.execute(
+                    __import__('sqlalchemy').text("PRAGMA table_info(reminders)")
+                ).fetchall()
+                column_names = {row[1] for row in column_rows}
+                if column_names and 'summary_date' not in column_names:
+                    conn.execute(__import__('sqlalchemy').text('DROP TABLE reminders'))
+                    conn.commit()
+                    ReminderModel.__table__.create(bind=self.engine, checkfirst=True)
+            except Exception:
+                pass
     
     def get_session(self):
         """Get a new database session."""
@@ -297,7 +359,7 @@ class DatabaseManager:
             session.close()
     
     def update_deadline(self, deadline_id: int, due_date: Optional[str] = None,
-                       task_type: Optional[str] = None) -> bool:
+                        task_type: Optional[str] = None) -> bool:
         """Update a deadline."""
         session = self.get_session()
         try:
@@ -309,7 +371,6 @@ class DatabaseManager:
                 deadline.due_date = datetime.strptime(due_date, "%Y-%m-%d").date()
             if task_type is not None:
                 deadline.task_type = task_type
-            
             session.commit()
             return True
         finally:
@@ -322,7 +383,7 @@ class DatabaseManager:
             deadline = session.query(DeadlineModel).filter_by(id=deadline_id).first()
             if not deadline:
                 return False
-            
+
             session.delete(deadline)
             session.commit()
             return True
@@ -331,14 +392,15 @@ class DatabaseManager:
     
     # ==================== STUDY SESSION CRUD OPERATIONS ====================
     
-    def add_study_session(self, date: str, subject: str, task_type: str,
-                         duration: int, difficulty: int, 
+    def add_study_session(self, date: str, start_time: str, subject: str, task_type: str,
+                         duration: int, difficulty: int,
                          completion_status: bool = False) -> StudySession:
         """Add a new study session to the database."""
         session = self.get_session()
         try:
             session_model = StudySessionModel(
                 date=datetime.strptime(date, "%Y-%m-%d").date(),
+                start_time=start_time,
                 subject=subject,
                 task_type=task_type,
                 duration=duration,
@@ -355,9 +417,14 @@ class DatabaseManager:
         """Get study sessions sorted by date, optionally filtered by user_id."""
         session = self.get_session()
         try:
-            query = session.query(StudySessionModel).order_by(StudySessionModel.date)
+            query = session.query(StudySessionModel).order_by(
+                StudySessionModel.date,
+                StudySessionModel.start_time
+            )
             if user_id is not None:
                 query = query.filter_by(user_id=user_id)
+            else:
+                query = query.filter(StudySessionModel.user_id.is_(None))
             sessions = query.all()
             return [s.to_dataclass() for s in sessions]
         finally:
@@ -368,9 +435,14 @@ class DatabaseManager:
         """Update completion status of a study session by index (within user scope)."""
         session = self.get_session()
         try:
-            query = session.query(StudySessionModel).order_by(StudySessionModel.date)
+            query = session.query(StudySessionModel).order_by(
+                StudySessionModel.date,
+                StudySessionModel.start_time
+            )
             if user_id is not None:
                 query = query.filter_by(user_id=user_id)
+            else:
+                query = query.filter(StudySessionModel.user_id.is_(None))
             sessions = query.all()
             
             if 0 <= session_index < len(sessions):
@@ -391,20 +463,27 @@ class DatabaseManager:
             session.close()
     
     def save_study_sessions(self, study_sessions: List[StudySession],
-                             user_id: Optional[int] = None) -> None:
+                              user_id: Optional[int] = None) -> None:
         """Replace all study sessions (for user) with a new list."""
         session = self.get_session()
         try:
-            # Delete existing sessions for this user (or all if no user)
             query = session.query(StudySessionModel)
             if user_id is not None:
                 query = query.filter_by(user_id=user_id)
-            query.delete()
-            
-            # Add new sessions
+            else:
+                query = query.filter(StudySessionModel.user_id.is_(None))
+
+            if user_id is not None:
+                session.query(ReminderModel).filter_by(
+                    user_id=user_id,
+                    status='pending'
+                ).delete(synchronize_session=False)
+            query.delete(synchronize_session=False)
+
             for study_session in study_sessions:
                 session_model = StudySessionModel(
                     date=datetime.strptime(study_session.date, "%Y-%m-%d").date(),
+                    start_time=study_session.start_time,
                     subject=study_session.subject,
                     task_type=study_session.task_type,
                     duration=study_session.duration,
@@ -413,7 +492,7 @@ class DatabaseManager:
                     user_id=user_id
                 )
                 session.add(session_model)
-            
+
             session.commit()
         finally:
             session.close()
@@ -489,3 +568,253 @@ class DatabaseManager:
             session.commit()
         finally:
             session.close()
+
+    @staticmethod
+    def _scope_setting_key(setting_name: str, user_id: Optional[int] = None) -> str:
+        """Build a metadata key for auth-scoped or legacy settings."""
+        if user_id is None:
+            return f'legacy:{setting_name}'
+        return f'user:{user_id}:{setting_name}'
+
+    def get_scope_setting(self, setting_name: str, user_id: Optional[int] = None,
+                          default: Optional[str] = None) -> Optional[str]:
+        """Get a scope-specific setting stored in metadata."""
+        return self.get_metadata(self._scope_setting_key(setting_name, user_id), default)
+
+    def set_scope_setting(self, setting_name: str, value: str,
+                          user_id: Optional[int] = None) -> None:
+        """Set a scope-specific setting stored in metadata."""
+        self.set_metadata(self._scope_setting_key(setting_name, user_id), value)
+
+    # ==================== NOTIFICATION OPERATIONS ====================
+
+    @staticmethod
+    def _scope_filter(column, user_id: Optional[int]):
+        """Build a scope filter for legacy rows or authenticated user rows."""
+        if user_id is None:
+            return column.is_(None)
+        return column == user_id
+
+    @staticmethod
+    def _get_metadata_value_for_session(session, key: str, default: Optional[str] = None) -> Optional[str]:
+        """Read metadata within an existing SQLAlchemy session."""
+        metadata = session.query(MetadataModel).filter_by(key=key).first()
+        return metadata.value if metadata else default
+
+    @staticmethod
+    def _parse_summary_time(summary_time_str: str) -> time:
+        """Parse the configured daily summary time."""
+        return datetime.strptime(summary_time_str, "%H:%M").time()
+
+    def _get_notification_targets(self, session, user: UserModel) -> Dict[str, Optional[str]]:
+        """Resolve email and ntfy destinations for a user scope."""
+        return {
+            'email': user.email,
+            'ntfy': self._get_metadata_value_for_session(
+                session, f'user:{user.id}:notification_topic'
+            ),
+        }
+
+    def _get_summary_schedule_time(self, session, user_id: int) -> time:
+        """Resolve the daily reminder time for a user."""
+        summary_time_str = self._get_metadata_value_for_session(
+            session, f'user:{user_id}:daily_summary_time', '08:00'
+        ) or '08:00'
+        try:
+            return self._parse_summary_time(summary_time_str)
+        except ValueError:
+            return time(hour=8, minute=0)
+
+    @staticmethod
+    def _build_notification_subject(summary_date, session_count: int) -> str:
+        """Build an email subject for a daily study summary."""
+        due_label = summary_date.strftime("%Y-%m-%d")
+        session_label = 'session' if session_count == 1 else 'sessions'
+        return f'Study planner summary for {due_label}: {session_count} {session_label}'
+
+    @staticmethod
+    def _build_notification_body(greeting_name: str, summary_date, session_count: int) -> str:
+        """Build a daily summary body for email and ntfy."""
+        session_label = 'study session' if session_count == 1 else 'study sessions'
+        day_label = 'today' if summary_date == datetime.now().date() else summary_date.strftime("%Y-%m-%d")
+        return f'Hey {greeting_name}, you have {session_count} {session_label} coming up {day_label}.'
+
+    @staticmethod
+    def _send_email(recipient: str, subject: str, body: str) -> None:
+        """Send an email using SMTP environment configuration."""
+        smtp_host = os.getenv('SMTP_HOST')
+        smtp_port = int(os.getenv('SMTP_PORT', '587'))
+        smtp_username = os.getenv('SMTP_USERNAME')
+        smtp_password = os.getenv('SMTP_PASSWORD')
+        smtp_from_email = os.getenv('SMTP_FROM_EMAIL') or smtp_username
+
+        if not smtp_host or not smtp_from_email:
+            raise RuntimeError('SMTP_HOST and SMTP_FROM_EMAIL (or SMTP_USERNAME) must be configured.')
+
+        message = EmailMessage()
+        message['Subject'] = subject
+        message['From'] = smtp_from_email
+        message['To'] = recipient
+        message.set_content(body)
+
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=30) as smtp:
+            smtp.starttls()
+            if smtp_username and smtp_password:
+                smtp.login(smtp_username, smtp_password)
+            smtp.send_message(message)
+
+    @staticmethod
+    def _send_ntfy(topic: str, subject: str, body: str) -> None:
+        """Send a push notification via the open-source ntfy protocol."""
+        server = os.getenv('NTFY_SERVER', 'https://ntfy.sh').rstrip('/')
+        endpoint = f'{server}/{topic}'
+        req = request.Request(endpoint, data=body.encode(), method='POST')
+        req.add_header('Title', subject)
+        req.add_header('Tags', 'calendar,books')
+        with request.urlopen(req, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f'ntfy request failed with status {response.status}.')
+
+    def sync_daily_summary_reminders(self, reference_datetime: Optional[datetime] = None) -> int:
+        """Create or refresh a single daily summary reminder per user and channel."""
+        current_datetime = reference_datetime or datetime.now()
+        summary_date = current_datetime.date()
+        created_or_updated = 0
+
+        with self._notification_lock:
+            session = self.get_session()
+            try:
+                users = (
+                    session.query(UserModel)
+                    .join(StudySessionModel, StudySessionModel.user_id == UserModel.id)
+                    .filter(StudySessionModel.date == summary_date)
+                    .distinct()
+                    .all()
+                )
+
+                for user in users:
+                    session_count = (
+                        session.query(StudySessionModel)
+                        .filter_by(user_id=user.id)
+                        .filter(StudySessionModel.date == summary_date)
+                        .count()
+                    )
+                    greeting_name = user.first_name or user.full_name.split()[0]
+                    scheduled_for = datetime.combine(
+                        summary_date,
+                        self._get_summary_schedule_time(session, user.id)
+                    )
+                    message = self._build_notification_body(greeting_name, summary_date, session_count)
+                    targets = self._get_notification_targets(session, user)
+
+                    for channel, recipient in targets.items():
+                        existing = (
+                            session.query(ReminderModel)
+                            .filter_by(user_id=user.id, summary_date=summary_date, channel=channel)
+                            .first()
+                        )
+
+                        if not recipient or session_count == 0:
+                            if existing and existing.status == 'pending':
+                                session.delete(existing)
+                                created_or_updated += 1
+                            continue
+
+                        if existing and existing.status == 'pending':
+                            existing.recipient = recipient
+                            existing.session_count = session_count
+                            existing.greeting_name = greeting_name
+                            existing.message = message
+                            existing.scheduled_for = scheduled_for
+                            created_or_updated += 1
+                            continue
+
+                        if existing:
+                            continue
+
+                        session.add(ReminderModel(
+                            user_id=user.id,
+                            summary_date=summary_date,
+                            session_count=session_count,
+                            greeting_name=greeting_name,
+                            message=message,
+                            channel=channel,
+                            recipient=recipient,
+                            scheduled_for=scheduled_for,
+                            status='pending'
+                        ))
+                        created_or_updated += 1
+
+                session.commit()
+                return created_or_updated
+            finally:
+                session.close()
+
+    def get_reminders(self, user_id: Optional[int] = None,
+                      status: Optional[str] = None) -> List[Reminder]:
+        """Get queued/sent/failed daily summary notifications for the requested scope."""
+        session = self.get_session()
+        try:
+            query = (
+                session.query(ReminderModel)
+                .filter(self._scope_filter(ReminderModel.user_id, user_id))
+            )
+            if status:
+                query = query.filter(ReminderModel.status == status)
+
+            rows = query.order_by(
+                ReminderModel.scheduled_for.asc(),
+                ReminderModel.created_at.desc()
+            ).all()
+
+            return [reminder.to_dataclass() for reminder in rows]
+        finally:
+            session.close()
+
+    def process_due_notifications(self, current_time: Optional[datetime] = None) -> Dict[str, int]:
+        """Send any pending notifications that are due."""
+        now = current_time or datetime.now()
+        results = {'sent': 0, 'failed': 0}
+
+        with self._notification_lock:
+            self.sync_daily_summary_reminders(now)
+            session = self.get_session()
+            try:
+                due_notifications = (
+                    session.query(ReminderModel)
+                    .filter(
+                        ReminderModel.status == 'pending',
+                        ReminderModel.scheduled_for <= now
+                    )
+                    .order_by(ReminderModel.scheduled_for.asc())
+                    .all()
+                )
+
+                for reminder in due_notifications:
+                    subject = self._build_notification_subject(
+                        reminder.summary_date,
+                        reminder.session_count
+                    )
+                    body = reminder.message
+
+                    try:
+                        if reminder.channel == 'email':
+                            self._send_email(reminder.recipient, subject, body)
+                        elif reminder.channel == 'ntfy':
+                            self._send_ntfy(reminder.recipient, subject, body)
+                        else:
+                            raise RuntimeError(f'Unsupported notification channel: {reminder.channel}')
+
+                        reminder.status = 'sent'
+                        reminder.sent_at = now
+                        reminder.error_message = None
+                        results['sent'] += 1
+                    except Exception as exc:
+                        reminder.status = 'failed'
+                        reminder.error_message = str(exc)
+                        results['failed'] += 1
+
+                session.commit()
+                return results
+            finally:
+                session.close()

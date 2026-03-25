@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Notifications - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <h1 class="display-4">🔔 Notification Queue</h1>
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('notification_settings') }}" class="btn btn-outline-primary btn-lg">
+                ⚙️ Notification Settings
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+{% if current_user.is_authenticated %}
+    {% if notifications %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Summary Date</th>
+                        <th>Message</th>
+                        <th>Channel</th>
+                        <th>Recipient</th>
+                        <th>Scheduled For</th>
+                        <th>Status</th>
+                        <th>Details</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for notification in notifications %}
+                    <tr>
+                        <td>
+                            <strong>{{ notification.summary_date }}</strong><br>
+                            <small class="text-muted">{{ notification.session_count }} sessions</small>
+                        </td>
+                        <td>{{ notification.message }}</td>
+                        <td><span class="badge bg-secondary">{{ notification.channel|upper }}</span></td>
+                        <td>{{ notification.recipient }}</td>
+                        <td>{{ notification.scheduled_for }}</td>
+                        <td>
+                            {% if notification.status == 'sent' %}
+                                <span class="badge bg-success">Sent</span>
+                            {% elif notification.status == 'failed' %}
+                                <span class="badge bg-danger">Failed</span>
+                            {% else %}
+                                <span class="badge bg-warning text-dark">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if notification.error_message %}
+                                <span class="text-danger small">{{ notification.error_message }}</span>
+                            {% elif notification.sent_at %}
+                                <span class="text-success small">Sent at {{ notification.sent_at }}</span>
+                            {% else %}
+                                <span class="text-muted small">Waiting for the morning summary delivery time</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    {% else %}
+        <div class="alert alert-info">
+            <h4 class="alert-heading">No Notifications Scheduled</h4>
+            <p class="mb-0">Generate a study plan to queue one daily summary email or ntfy reminder for mornings when you have sessions scheduled.</p>
+        </div>
+    {% endif %}
+{% else %}
+    <div class="alert alert-info">
+        <h4 class="alert-heading">Notifications Need an Account</h4>
+        <p class="mb-0">Guest mode can preview study plans, but outbound daily summary reminders are only scheduled for registered users.</p>
+    </div>
+{% endif %}
+{% endblock %}

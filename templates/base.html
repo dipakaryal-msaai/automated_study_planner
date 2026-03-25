@@ -27,6 +27,14 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('view_deadlines') }}">Deadlines</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('view_notifications') }}">
+                            Notifications
+                            {% if pending_notification_count %}
+                                <span class="badge bg-warning text-dark ms-1">{{ pending_notification_count }}</span>
+                            {% endif %}
+                        </a>
+                    </li>
                 </ul>
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
@@ -34,6 +42,9 @@
                             <span class="navbar-text text-white me-3">
                                 👤 {{ current_user.full_name }}
                             </span>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('notification_settings') }}">Settings</a>
                         </li>
                         <li class="nav-item">
                             <a class="nav-link" href="{{ url_for('auth_logout') }}">Logout</a>
@@ -79,7 +90,7 @@
 
     <footer class="footer mt-5 py-3 bg-light">
         <div class="container text-center text-muted">
-            <small>&copy; 2026 Automated Study Planner | Version 0.5.0 (Authentication)</small>
+            <small>&copy; 2026 Automated Study Planner | Version 0.6.0 (Notifications)</small>
         </div>
     </footer>
 

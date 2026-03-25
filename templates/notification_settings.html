@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}Notification Settings - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <h1 class="display-5 mb-4">⚙️ Notification Settings</h1>
+
+        <div class="card">
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('notification_settings') }}">
+                    <div class="mb-3">
+                        <label class="form-label">Email Recipient</label>
+                        <input type="email" class="form-control" value="{{ current_user.email }}" disabled>
+                        <div class="form-text">Daily summary emails are sent to your account email.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notification_topic" class="form-label">ntfy Topic (Optional)</label>
+                        <input type="text" class="form-control" id="notification_topic" name="notification_topic"
+                               value="{{ current_topic }}" placeholder="my-study-planner-topic">
+                        <div class="form-text">
+                            Optional open-source push delivery using <code>ntfy</code>. Leave blank if email is enough.
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="daily_summary_time" class="form-label">Daily Summary Time</label>
+                        <input type="time" class="form-control" id="daily_summary_time" name="daily_summary_time"
+                               value="{{ daily_summary_time }}" required>
+                        <div class="form-text">Your reminder is sent once each morning at this time when you have sessions scheduled that day.</div>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">Save Settings</button>
+                        <a href="{{ url_for('view_notifications') }}" class="btn btn-outline-secondary">View Notification Queue</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

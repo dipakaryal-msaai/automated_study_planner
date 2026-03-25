@@ -54,6 +54,7 @@ class StudySession:
     task_type: str
     duration: int
     difficulty: int
+    start_time: str = "18:00"
     completion_status: bool = False
     
     def to_dict(self) -> dict:
@@ -64,6 +65,22 @@ class StudySession:
     def from_dict(data: dict) -> "StudySession":
         """Create StudySession from dictionary."""
         return StudySession(**data)
+
+
+@dataclass
+class Reminder:
+    """Represents a scheduled outbound daily reminder summary."""
+    reminder_id: int
+    summary_date: str
+    session_count: int
+    greeting_name: str
+    message: str
+    channel: str
+    recipient: str
+    scheduled_for: str
+    status: str
+    sent_at: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class StorageManager:

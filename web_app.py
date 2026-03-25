@@ -3,6 +3,9 @@ Automated Study Planner - Flask Web Application
 Web interface for managing courses, deadlines, and generating study plans.
 """
 
+import atexit
+import os
+from threading import Event, Thread
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
@@ -22,6 +25,9 @@ login_manager.login_message_category = 'info'
 
 # Initialize database manager
 db = DatabaseManager()
+NOTIFICATION_POLL_INTERVAL_SECONDS = int(os.getenv('NOTIFICATION_POLL_INTERVAL_SECONDS', '60'))
+_scheduler_stop_event = Event()
+_scheduler_started = False
 
 
 @login_manager.user_loader
@@ -139,6 +145,89 @@ def get_deadline_color(due_date_str, completion_status):
             return 'success'
     except ValueError:
         return 'secondary'
+
+
+def normalize_summary_time(summary_time_str):
+    """Normalize a time input to HH:MM, returning None if invalid."""
+    if not summary_time_str:
+        return None
+
+    try:
+        return datetime.strptime(summary_time_str, "%H:%M").strftime("%H:%M")
+    except ValueError:
+        return None
+
+
+def get_daily_summary_time(user_id=None):
+    """Return the preferred summary delivery time for the requested scope."""
+    return db.get_scope_setting('daily_summary_time', user_id=user_id, default='08:00')
+
+
+def serialize_notifications(user_id, status=None, limit=None):
+    """Shape queued notification records for template rendering."""
+    if user_id is None:
+        return []
+
+    db.sync_daily_summary_reminders()
+    notifications = [
+        {
+            'reminder_id': reminder.reminder_id,
+            'summary_date': reminder.summary_date,
+            'session_count': reminder.session_count,
+            'greeting_name': reminder.greeting_name,
+            'message': reminder.message,
+            'channel': reminder.channel,
+            'recipient': reminder.recipient,
+            'scheduled_for': reminder.scheduled_for,
+            'status': reminder.status,
+            'sent_at': reminder.sent_at,
+            'error_message': reminder.error_message,
+        }
+        for reminder in db.get_reminders(user_id=user_id, status=status)
+    ]
+
+    if limit is not None:
+        notifications = notifications[:limit]
+    return notifications
+
+
+def run_notification_scheduler():
+    """Background loop that periodically sends due notifications."""
+    db.process_due_notifications()
+    while not _scheduler_stop_event.wait(NOTIFICATION_POLL_INTERVAL_SECONDS):
+        db.process_due_notifications()
+
+
+def start_notification_scheduler():
+    """Start the lightweight notification scheduler once per app process."""
+    global _scheduler_started
+
+    if _scheduler_started or os.getenv('NOTIFICATION_SCHEDULER_ENABLED', '1') == '0':
+        return
+
+    if app.debug and os.getenv('WERKZEUG_RUN_MAIN') != 'true':
+        return
+
+    scheduler_thread = Thread(
+        target=run_notification_scheduler,
+        name='study-session-notification-scheduler',
+        daemon=True
+    )
+    scheduler_thread.start()
+    atexit.register(_scheduler_stop_event.set)
+    _scheduler_started = True
+
+
+@app.context_processor
+def inject_notification_summary():
+    """Expose notification counts to all templates."""
+    if request.endpoint == 'static' or not current_user.is_authenticated:
+        return {'pending_notification_count': 0}
+    return {
+        'pending_notification_count': len(
+            serialize_notifications(user_id=current_user.id, status='pending')
+        )
+    }
 
 
 def generate_study_plan_logic(courses, deadlines, start_date_str=None):
@@ -315,6 +404,14 @@ def enter_guest():
 def index():
     """Dashboard - Display study plan overview."""
     courses, deadlines, study_plans = load_data()
+    pending_notifications = []
+    failed_notifications = []
+    daily_summary_time = '08:00'
+
+    if current_user.is_authenticated:
+        daily_summary_time = get_daily_summary_time(current_user.id)
+        pending_notifications = serialize_notifications(current_user.id, status='pending', limit=5)
+        failed_notifications = serialize_notifications(current_user.id, status='failed', limit=5)
     
     # Add color coding and original index to study plans
     for i, plan in enumerate(study_plans):
@@ -330,7 +427,10 @@ def index():
         upcoming_plans=upcoming_plans,
         completed_plans=completed_plans,
         courses=courses,
-        deadlines=deadlines
+        deadlines=deadlines,
+        pending_notifications=pending_notifications,
+        failed_notifications=failed_notifications,
+        daily_summary_time=daily_summary_time
     )
 
 
@@ -486,12 +586,17 @@ def generate_plan():
     if not deadlines:
         flash('Add deadlines before generating a study plan.', 'warning')
         return redirect(url_for('index'))
-    
+
     study_plans = generate_study_plan_logic(courses, deadlines)
     save_study_plans(study_plans)
 
-    if not current_user.is_authenticated:
+    if current_user.is_authenticated:
+        notification_topic = db.get_scope_setting('notification_topic', user_id=current_user.id)
+        if not notification_topic:
+            flash('Email summaries are scheduled. Add an ntfy topic in Notification Settings if you also want open-source push notifications.', 'info')
+    else:
         _guest_warn()
+        flash('Guest mode can generate a study plan, but outbound daily reminders require a saved account.', 'info')
 
     flash(f'Study plan generated with {len(study_plans)} sessions!', 'success')
     return redirect(url_for('index'))
@@ -626,6 +731,49 @@ def delete_deadline(deadline_id):
         flash('Deadline not found.', 'danger')
     
     return redirect(url_for('view_deadlines'))
+
+
+@app.route('/notifications')
+def view_notifications():
+    """Display scheduled daily summary notifications."""
+    if not current_user.is_authenticated:
+        _guest_warn()
+        flash('Outbound notifications are available after you create an account and generate a study plan.', 'info')
+        return render_template('notifications.html', notifications=[])
+
+    notifications = serialize_notifications(current_user.id)
+    return render_template('notifications.html', notifications=notifications)
+
+
+@app.route('/settings/notifications', methods=['GET', 'POST'])
+@login_required
+def notification_settings():
+    """Configure web notification settings for the logged-in user."""
+    current_topic = db.get_scope_setting('notification_topic', user_id=current_user.id, default='') or ''
+    current_time = get_daily_summary_time(current_user.id)
+
+    if request.method == 'POST':
+        notification_topic = request.form.get('notification_topic', '').strip()
+        daily_summary_time = request.form.get('daily_summary_time', '').strip()
+        normalized_time = normalize_summary_time(daily_summary_time)
+
+        if normalized_time is None:
+            flash('Daily summary time must use HH:MM.', 'danger')
+            return redirect(url_for('notification_settings'))
+
+        db.set_scope_setting('daily_summary_time', normalized_time, user_id=current_user.id)
+        db.set_scope_setting('notification_topic', notification_topic, user_id=current_user.id)
+        flash('Notification settings updated.', 'success')
+        return redirect(url_for('notification_settings'))
+
+    return render_template(
+        'notification_settings.html',
+        current_topic=current_topic,
+        daily_summary_time=current_time
+    )
+
+
+start_notification_scheduler()
 
 
 if __name__ == '__main__':
