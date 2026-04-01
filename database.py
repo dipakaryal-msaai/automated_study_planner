@@ -464,10 +464,15 @@ class DatabaseManager:
     
     def save_study_sessions(self, study_sessions: List[StudySession],
                               user_id: Optional[int] = None) -> None:
-        """Replace all study sessions (for user) with a new list."""
+        """Replace all *incomplete* study sessions (for user) with a new list.
+
+        Completed sessions are never deleted — they form the permanent history
+        that the analytics dashboard and streak counter rely on.
+        """
         session = self.get_session()
         try:
-            query = session.query(StudySessionModel)
+            # Delete only incomplete sessions so completed history is preserved.
+            query = session.query(StudySessionModel).filter_by(completion_status=False)
             if user_id is not None:
                 query = query.filter_by(user_id=user_id)
             else:

@@ -4,7 +4,9 @@ Web interface for managing courses, deadlines, and generating study plans.
 """
 
 import atexit
+import json
 import os
+from collections import defaultdict
 from threading import Event, Thread
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
@@ -118,11 +120,18 @@ def load_data():
 
 
 def save_study_plans(study_plans):
-    """Persist study plans for the current user (or guest session)."""
+    """Persist study plans for the current user (or guest session).
+
+    Completed sessions are always preserved — only incomplete sessions are
+    replaced so that history is never lost on regeneration.
+    """
     if current_user.is_authenticated:
         db.save_study_sessions(study_plans, user_id=current_user.id)
     else:
-        _save_guest_study_plans(study_plans)
+        # Keep completed guest sessions; replace only incomplete ones.
+        existing = _guest_study_plans()
+        completed = [p for p in existing if p.completion_status]
+        _save_guest_study_plans(completed + study_plans)
 
 
 def get_deadline_color(due_date_str, completion_status):
@@ -770,6 +779,113 @@ def notification_settings():
         'notification_settings.html',
         current_topic=current_topic,
         daily_summary_time=current_time
+    )
+
+
+@app.route('/analytics')
+def analytics():
+    """Progress tracking and analytics dashboard."""
+    courses, deadlines, study_plans = load_data()
+
+    today = datetime.now().date()
+
+    # ── Core counts ──────────────────────────────────────────────────────────
+    total_sessions = len(study_plans)
+    completed_sessions = sum(1 for s in study_plans if s.completion_status)
+    remaining_sessions = total_sessions - completed_sessions
+    completion_rate = round(completed_sessions / total_sessions * 100) if total_sessions else 0
+
+    # ── Study hours ──────────────────────────────────────────────────────────
+    total_planned_hours = round(sum(s.duration for s in study_plans) / 60, 1)
+    completed_hours = round(sum(s.duration for s in study_plans if s.completion_status) / 60, 1)
+
+    # ── Study streak (consecutive days with ≥1 completed session) ────────────
+    completed_dates = sorted(
+        {datetime.strptime(s.date, "%Y-%m-%d").date()
+         for s in study_plans if s.completion_status},
+        reverse=True
+    )
+    streak = 0
+    if completed_dates:
+        check = today
+        for d in completed_dates:
+            if d == check or d == check - timedelta(days=1):
+                streak += 1
+                check = d
+            elif d < check - timedelta(days=1):
+                break
+
+    # ── Per-subject stats (for bar chart) ────────────────────────────────────
+    subject_total: dict = defaultdict(int)
+    subject_done: dict = defaultdict(int)
+    for s in study_plans:
+        subject_total[s.subject] += 1
+        if s.completion_status:
+            subject_done[s.subject] += 1
+    subjects = sorted(subject_total.keys())
+    subject_totals_list = [subject_total[sub] for sub in subjects]
+    subject_done_list = [subject_done[sub] for sub in subjects]
+
+    # ── Weekly study hours for the last 8 weeks (for line chart) ─────────────
+    week_labels = []
+    week_planned_hours = []
+    week_completed_hours = []
+    for weeks_ago in range(7, -1, -1):
+        week_start = today - timedelta(days=today.weekday() + weeks_ago * 7)
+        week_end = week_start + timedelta(days=6)
+        week_labels.append(week_start.strftime("%-m/%-d"))
+        planned = sum(
+            s.duration for s in study_plans
+            if week_start <= datetime.strptime(s.date, "%Y-%m-%d").date() <= week_end
+        )
+        done = sum(
+            s.duration for s in study_plans
+            if s.completion_status
+            and week_start <= datetime.strptime(s.date, "%Y-%m-%d").date() <= week_end
+        )
+        week_planned_hours.append(round(planned / 60, 1))
+        week_completed_hours.append(round(done / 60, 1))
+
+    # ── Upcoming deadlines (top 5 future) ────────────────────────────────────
+    course_map = {cid: c.name for cid, c in courses.items()}
+    upcoming_deadlines = []
+    for did, d in deadlines.items():
+        try:
+            due = datetime.strptime(d.due_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        days_left = (due - today).days
+        if days_left >= 0:
+            upcoming_deadlines.append({
+                'course': course_map.get(d.course_id, 'Unknown'),
+                'task_type': d.task_type,
+                'due_date': d.due_date,
+                'days_left': days_left,
+                'color': get_deadline_color(d.due_date, False),
+            })
+    upcoming_deadlines.sort(key=lambda x: x['days_left'])
+    upcoming_deadlines = upcoming_deadlines[:5]
+
+    return render_template(
+        'analytics.html',
+        # summary stats
+        total_sessions=total_sessions,
+        completed_sessions=completed_sessions,
+        remaining_sessions=remaining_sessions,
+        completion_rate=completion_rate,
+        total_planned_hours=total_planned_hours,
+        completed_hours=completed_hours,
+        streak=streak,
+        # chart data (JSON-serialised for JS)
+        subjects_json=json.dumps(subjects),
+        subject_totals_json=json.dumps(subject_totals_list),
+        subject_done_json=json.dumps(subject_done_list),
+        week_labels_json=json.dumps(week_labels),
+        week_planned_json=json.dumps(week_planned_hours),
+        week_completed_json=json.dumps(week_completed_hours),
+        doughnut_json=json.dumps([completed_sessions, remaining_sessions]),
+        # upcoming deadlines table
+        upcoming_deadlines=upcoming_deadlines,
     )
 
 

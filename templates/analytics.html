@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Analytics - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <h1 class="display-4">📊 Progress Analytics</h1>
+        <p class="text-muted">Track your study habits and completion trends over time.</p>
+    </div>
+</div>
+
+{% if total_sessions == 0 %}
+<div class="alert alert-info">
+    <strong>No study sessions yet.</strong>
+    <a href="{{ url_for('index') }}" class="alert-link">Generate a study plan</a> to start tracking your progress.
+</div>
+{% else %}
+
+<!-- ── Stat Cards ─────────────────────────────────────────────────────────── -->
+<div class="row mb-4 g-3">
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="display-5 fw-bold text-success">{{ completion_rate }}%</div>
+                <div class="text-muted small mt-1">Completion Rate</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="display-5 fw-bold text-primary">{{ completed_hours }}</div>
+                <div class="text-muted small mt-1">Hours Studied</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="display-5 fw-bold text-warning">{{ streak }}</div>
+                <div class="text-muted small mt-1">Day Streak 🔥</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center h-100 border-0 shadow-sm">
+            <div class="card-body">
+                <div class="display-5 fw-bold text-info">{{ completed_sessions }}/{{ total_sessions }}</div>
+                <div class="text-muted small mt-1">Sessions Done</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Charts Row ─────────────────────────────────────────────────────────── -->
+<div class="row mb-4 g-3">
+
+    <!-- Doughnut: Completed vs Remaining -->
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 pt-3">
+                <h5 class="mb-0">Sessions Overview</h5>
+            </div>
+            <div class="card-body d-flex align-items-center justify-content-center">
+                <div style="max-width: 260px; width: 100%;">
+                    <canvas id="doughnutChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bar: Sessions per subject -->
+    <div class="col-md-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-0 pt-3">
+                <h5 class="mb-0">Sessions by Subject</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="subjectBarChart" style="max-height: 260px;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Weekly Line Chart ───────────────────────────────────────────────────── -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 pt-3">
+                <h5 class="mb-0">Study Hours — Last 8 Weeks</h5>
+            </div>
+            <div class="card-body">
+                <canvas id="weeklyLineChart" style="max-height: 260px;"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Upcoming Deadlines ──────────────────────────────────────────────────── -->
+{% if upcoming_deadlines %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-0 pt-3 d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Upcoming Deadlines</h5>
+                <a href="{{ url_for('view_deadlines') }}" class="btn btn-sm btn-outline-secondary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Course</th>
+                            <th>Type</th>
+                            <th>Due Date</th>
+                            <th>Days Left</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for d in upcoming_deadlines %}
+                        <tr class="deadline-{{ d.color }}">
+                            <td>{{ d.course }}</td>
+                            <td><span class="badge bg-secondary">{{ d.task_type }}</span></td>
+                            <td>{{ d.due_date }}</td>
+                            <td>
+                                {% if d.days_left == 0 %}
+                                    <span class="badge bg-danger">Today!</span>
+                                {% elif d.days_left == 1 %}
+                                    <span class="badge bg-danger">Tomorrow</span>
+                                {% elif d.days_left <= 3 %}
+                                    <span class="badge bg-danger">{{ d.days_left }} days</span>
+                                {% elif d.days_left <= 7 %}
+                                    <span class="badge bg-warning text-dark">{{ d.days_left }} days</span>
+                                {% else %}
+                                    <span class="badge bg-success">{{ d.days_left }} days</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- ── Hours breakdown ────────────────────────────────────────────────────── -->
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <h6 class="text-muted mb-2">Study Hours Breakdown</h6>
+                <div class="d-flex align-items-center mb-1">
+                    <span class="me-2 text-success fw-semibold" style="width:110px">Completed</span>
+                    <div class="progress flex-grow-1 me-2" style="height:18px">
+                        {% set pct = (completed_hours / total_planned_hours * 100)|round if total_planned_hours else 0 %}
+                        <div class="progress-bar bg-success" style="width:{{ pct }}%"></div>
+                    </div>
+                    <span class="text-muted small">{{ completed_hours }}h / {{ total_planned_hours }}h</span>
+                </div>
+                <div class="d-flex align-items-center">
+                    <span class="me-2 text-secondary fw-semibold" style="width:110px">Remaining</span>
+                    <div class="progress flex-grow-1 me-2" style="height:18px">
+                        {% set rem_h = total_planned_hours - completed_hours %}
+                        {% set rem_pct = (rem_h / total_planned_hours * 100)|round if total_planned_hours else 0 %}
+                        <div class="progress-bar bg-secondary" style="width:{{ rem_pct }}%"></div>
+                    </div>
+                    <span class="text-muted small">{{ (total_planned_hours - completed_hours)|round(1) }}h remaining</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endif %}{# end if total_sessions > 0 #}
+{% endblock %}
+
+{% block scripts %}
+{% if total_sessions > 0 %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+const subjects       = {{ subjects_json | safe }};
+const subjectTotals  = {{ subject_totals_json | safe }};
+const subjectDone    = {{ subject_done_json | safe }};
+const weekLabels     = {{ week_labels_json | safe }};
+const weekPlanned    = {{ week_planned_json | safe }};
+const weekCompleted  = {{ week_completed_json | safe }};
+const doughnutData   = {{ doughnut_json | safe }};
+
+// ── Doughnut ──────────────────────────────────────────────────────────────
+new Chart(document.getElementById('doughnutChart'), {
+    type: 'doughnut',
+    data: {
+        labels: ['Completed', 'Remaining'],
+        datasets: [{
+            data: doughnutData,
+            backgroundColor: ['#198754', '#dee2e6'],
+            borderWidth: 0,
+        }]
+    },
+    options: {
+        plugins: {
+            legend: { position: 'bottom' },
+        },
+        cutout: '65%',
+    }
+});
+
+// ── Subject Bar ───────────────────────────────────────────────────────────
+new Chart(document.getElementById('subjectBarChart'), {
+    type: 'bar',
+    data: {
+        labels: subjects,
+        datasets: [
+            {
+                label: 'Completed',
+                data: subjectDone,
+                backgroundColor: '#198754',
+                borderRadius: 4,
+            },
+            {
+                label: 'Remaining',
+                data: subjectTotals.map((t, i) => t - subjectDone[i]),
+                backgroundColor: '#dee2e6',
+                borderRadius: 4,
+            }
+        ]
+    },
+    options: {
+        plugins: { legend: { position: 'bottom' } },
+        responsive: true,
+        scales: {
+            x: { stacked: true, grid: { display: false } },
+            y: { stacked: true, ticks: { stepSize: 1 } },
+        }
+    }
+});
+
+// ── Weekly Line ───────────────────────────────────────────────────────────
+new Chart(document.getElementById('weeklyLineChart'), {
+    type: 'line',
+    data: {
+        labels: weekLabels,
+        datasets: [
+            {
+                label: 'Planned (hrs)',
+                data: weekPlanned,
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13,110,253,0.08)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+            },
+            {
+                label: 'Completed (hrs)',
+                data: weekCompleted,
+                borderColor: '#198754',
+                backgroundColor: 'rgba(25,135,84,0.08)',
+                fill: true,
+                tension: 0.3,
+                pointRadius: 4,
+            }
+        ]
+    },
+    options: {
+        plugins: { legend: { position: 'bottom' } },
+        responsive: true,
+        scales: {
+            x: { grid: { display: false } },
+            y: { beginAtZero: true },
+        }
+    }
+});
+</script>
+{% endif %}
+{% endblock %}

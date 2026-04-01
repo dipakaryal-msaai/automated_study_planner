@@ -1,4 +1,4 @@
-# Automated Study Planner - Flask Web App (Chunk 1-6)
+# Automated Study Planner - Flask Web App (Chunk 1-7)
 
 ## Overview
 A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, and lightweight daily outbound reminders for authenticated web users.
@@ -19,6 +19,7 @@ A comprehensive study planner application with both CLI and Web interfaces. Feat
 - ✅ **Multi-user isolation** - Each user sees only their own courses, deadlines, and study plans (NEW in Chunk 5)
 - ✅ **Guest Mode** - Explore all features without registering; data is session-only with clear warnings (NEW in Chunk 5)
 - ✅ **Daily Summary Notifications** - Morning outbound reminders via email and optional open-source `ntfy` push (NEW in Chunk 6)
+- ✅ **Progress Tracking & Analytics Dashboard** - Completion rate, study streak, per-subject breakdowns, weekly trend charts (NEW in Chunk 7)
 
 ## Setup
 
@@ -101,6 +102,7 @@ python main.py
 - **Guest Mode Banner** - Persistent warning bar with link to register
 - **Notification Queue** - View pending, sent, and failed daily reminders
 - **Notification Settings** - Configure morning summary time and optional `ntfy` topic
+- **Analytics Dashboard** - Completion rate, study hours, day streak, sessions by subject, weekly trend charts, upcoming deadlines
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -251,7 +253,7 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 6+)
+## Future Improvements (Chunks 8+)
 - Advanced scheduling algorithms (ML-based optimization)
 - Calendar integration (Google Calendar, Outlook)
 - Progress tracking and analytics dashboard
@@ -277,7 +279,10 @@ automated_study_planner/
 │   ├── add_course.html  # Add course form
 │   ├── deadlines.html   # Deadlines list
 │   ├── add_deadline.html # Add deadline form
-│   └── edit_deadline.html # Edit deadline form
+│   ├── edit_deadline.html # Edit deadline form
+│   ├── notifications.html # Notification queue
+│   ├── notification_settings.html # Notification config
+│   └── analytics.html   # Progress & analytics dashboard (NEW in Chunk 7)
 ├── static/              # Static assets
 │   └── css/
 │       └── style.css    # Custom styling
@@ -292,13 +297,14 @@ automated_study_planner/
 - **Chunk 3**: Flask web application with Bootstrap UI and color-coded deadlines
 - **Chunk 5**: Authentication system (register/login/logout, multi-user data isolation, guest mode)
 - **Chunk 6**: Daily summary notifications for authenticated web users
+- **Chunk 7**: Progress tracking & analytics dashboard (completion rate, study streak, Chart.js visualizations)
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
 - **Database**: SQLite (development), PostgreSQL (production)
-- **Frontend**: HTML5, Bootstrap 5.3, Custom CSS
+- **Frontend**: HTML5, Bootstrap 5.3, Chart.js 4.4, Custom CSS
 - **CLI**: tabulate (for formatted tables)
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.6.0 (Chunk 6 - Daily Summary Notifications)
+**Version**: 0.7.0 (Chunk 7 - Analytics Dashboard)
