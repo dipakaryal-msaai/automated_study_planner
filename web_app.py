@@ -7,6 +7,8 @@ import atexit
 import json
 import os
 from collections import defaultdict
+from dotenv import load_dotenv
+load_dotenv()
 from threading import Event, Thread
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
