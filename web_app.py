@@ -172,6 +172,31 @@ def get_daily_summary_time(user_id=None):
     return db.get_scope_setting('daily_summary_time', user_id=user_id, default='08:00')
 
 
+def get_smtp_status():
+    """Return SMTP configuration status for each required/optional env var."""
+    smtp_host = os.getenv('SMTP_HOST')
+    smtp_port = os.getenv('SMTP_PORT')
+    smtp_username = os.getenv('SMTP_USERNAME')
+    smtp_password = os.getenv('SMTP_PASSWORD')
+    smtp_from_email = os.getenv('SMTP_FROM_EMAIL')
+
+    effective_from = smtp_from_email or smtp_username
+    configured = bool(smtp_host and effective_from)
+
+    return {
+        'configured': configured,
+        'vars': [
+            {'name': 'SMTP_HOST',       'required': True,  'set': bool(smtp_host)},
+            {'name': 'SMTP_PORT',       'required': False, 'set': bool(smtp_port), 'default': '587'},
+            {'name': 'SMTP_FROM_EMAIL', 'required': False, 'set': bool(smtp_from_email),
+             'note': 'Required if SMTP_USERNAME is not set'},
+            {'name': 'SMTP_USERNAME',   'required': False, 'set': bool(smtp_username),
+             'note': 'Also used as From address when SMTP_FROM_EMAIL is absent'},
+            {'name': 'SMTP_PASSWORD',   'required': False, 'set': bool(smtp_password)},
+        ],
+    }
+
+
 def serialize_notifications(user_id, status=None, limit=None):
     """Shape queued notification records for template rendering."""
     if user_id is None:
@@ -751,7 +776,11 @@ def view_notifications():
         return render_template('notifications.html', notifications=[])
 
     notifications = serialize_notifications(current_user.id)
-    return render_template('notifications.html', notifications=notifications)
+    smtp_failure = any(
+        n['status'] == 'failed' and 'SMTP' in (n.get('error_message') or '')
+        for n in notifications
+    )
+    return render_template('notifications.html', notifications=notifications, smtp_failure=smtp_failure)
 
 
 @app.route('/settings/notifications', methods=['GET', 'POST'])
@@ -778,8 +807,35 @@ def notification_settings():
     return render_template(
         'notification_settings.html',
         current_topic=current_topic,
-        daily_summary_time=current_time
+        daily_summary_time=current_time,
+        smtp_status=get_smtp_status()
     )
+
+
+@app.route('/settings/notifications/test-email', methods=['POST'])
+@login_required
+def test_email():
+    """Send a test email to the current user to verify SMTP configuration."""
+    status = get_smtp_status()
+    if not status['configured']:
+        flash('SMTP is not fully configured. Check the status below and set the required environment variables.', 'danger')
+        return redirect(url_for('notification_settings'))
+
+    try:
+        db._send_email(
+            recipient=current_user.email,
+            subject='Study Planner — Test Email ✅',
+            body=(
+                f'Hi {current_user.first_name or current_user.email},\n\n'
+                'This is a test email from your Automated Study Planner.\n'
+                'Your SMTP configuration is working correctly!'
+            )
+        )
+        flash(f'Test email sent to {current_user.email}. Check your inbox!', 'success')
+    except Exception as e:
+        flash(f'Failed to send test email: {e}', 'danger')
+
+    return redirect(url_for('notification_settings'))
 
 
 @app.route('/analytics')

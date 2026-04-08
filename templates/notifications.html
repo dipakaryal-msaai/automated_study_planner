@@ -17,6 +17,16 @@
 </div>
 
 {% if current_user.is_authenticated %}
+    {% if smtp_failure %}
+    <div class="alert alert-warning d-flex align-items-start mb-4" role="alert">
+        <span class="me-2 fs-5">⚠️</span>
+        <div>
+            <strong>Email delivery is failing</strong> — your SMTP server is not configured.
+            <a href="{{ url_for('notification_settings') }}" class="alert-link ms-1">Fix it in Notification Settings →</a>
+        </div>
+    </div>
+    {% endif %}
+
     {% if notifications %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
