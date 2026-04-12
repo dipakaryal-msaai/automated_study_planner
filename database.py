@@ -549,6 +549,22 @@ class DatabaseManager:
         finally:
             session.close()
 
+    def update_password(self, user_id: int, new_password: str) -> bool:
+        """Hash and save a new password for the given user. Returns True on success."""
+        session = self.get_session()
+        try:
+            user = session.query(UserModel).filter_by(id=user_id).first()
+            if user is None:
+                return False
+            user.set_password(new_password)
+            session.commit()
+            return True
+        except Exception:
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
     # ==================== METADATA OPERATIONS ====================
     
     def get_metadata(self, key: str, default: str = None) -> Optional[str]:

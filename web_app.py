@@ -10,6 +10,7 @@ from collections import defaultdict
 from dotenv import load_dotenv
 load_dotenv()
 from threading import Event, Thread
+from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
@@ -197,6 +198,22 @@ def get_smtp_status():
             {'name': 'SMTP_PASSWORD',   'required': False, 'set': bool(smtp_password)},
         ],
     }
+
+
+def get_reset_token(email: str) -> str:
+    """Generate a signed, time-limited password-reset token for the given email."""
+    s = URLSafeTimedSerializer(app.secret_key)
+    return s.dumps(email.lower(), salt='password-reset')
+
+
+def verify_reset_token(token: str, max_age: int = 3600):
+    """Return the email from a valid token, or None if expired/invalid."""
+    s = URLSafeTimedSerializer(app.secret_key)
+    try:
+        email = s.loads(token, salt='password-reset', max_age=max_age)
+    except (SignatureExpired, BadSignature):
+        return None
+    return email
 
 
 def serialize_notifications(user_id, status=None, limit=None):
@@ -419,6 +436,76 @@ def auth_logout():
         session.pop(key, None)
     flash('You have been logged out.', 'info')
     return redirect(url_for('auth_login'))
+
+
+@app.route('/auth/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    """Send a password-reset link to the user's email."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        user = db.get_user_by_email(email)
+        if user:
+            token = get_reset_token(email)
+            reset_url = url_for('reset_password', token=token, _external=True)
+            smtp_ok = get_smtp_status()['configured']
+            if smtp_ok:
+                try:
+                    db._send_email(
+                        recipient=email,
+                        subject='Study Planner — Password Reset',
+                        body=(
+                            f'Hi {user.first_name},\n\n'
+                            f'Click the link below to reset your password. '
+                            f'This link expires in 1 hour.\n\n'
+                            f'{reset_url}\n\n'
+                            f'If you did not request a password reset, ignore this email.'
+                        )
+                    )
+                except Exception:
+                    pass  # Don't reveal delivery failures
+        # Always show the same message to avoid leaking whether the email exists
+        flash('If that email is registered, a reset link has been sent. Check your inbox.', 'info')
+        return redirect(url_for('auth_login'))
+
+    return render_template('forgot_password.html')
+
+
+@app.route('/auth/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    """Let the user set a new password via a valid reset token."""
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    email = verify_reset_token(token)
+    if email is None:
+        flash('The reset link is invalid or has expired. Please request a new one.', 'danger')
+        return redirect(url_for('forgot_password'))
+
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+
+        if len(password) < 8:
+            flash('Password must be at least 8 characters.', 'danger')
+            return render_template('reset_password.html', token=token)
+
+        if password != confirm:
+            flash('Passwords do not match.', 'danger')
+            return render_template('reset_password.html', token=token)
+
+        user = db.get_user_by_email(email)
+        if user is None:
+            flash('Account not found.', 'danger')
+            return redirect(url_for('auth_login'))
+
+        db.update_password(user.id, password)
+        flash('Your password has been reset. Please log in.', 'success')
+        return redirect(url_for('auth_login'))
+
+    return render_template('reset_password.html', token=token)
 
 
 @app.route('/guest')
