@@ -19,20 +19,24 @@
 <!-- Quick Stats -->
 <div class="row mb-4">
     <div class="col-md-4">
+        <a href="{{ url_for('view_courses') }}" class="text-decoration-none">
         <div class="card bg-info text-white">
             <div class="card-body text-center">
                 <h2 class="display-4">{{ courses|length }}</h2>
                 <p class="mb-0">Total Courses</p>
             </div>
         </div>
+        </a>
     </div>
     <div class="col-md-4">
+        <a href="{{ url_for('view_deadlines') }}" class="text-decoration-none">
         <div class="card bg-warning text-white">
             <div class="card-body text-center">
                 <h2 class="display-4">{{ deadlines|length }}</h2>
                 <p class="mb-0">Active Deadlines</p>
             </div>
         </div>
+        </a>
     </div>
     <div class="col-md-4">
         <div class="card bg-success text-white">
