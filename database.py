@@ -6,7 +6,7 @@ Supports both SQLite (development) and PostgreSQL (production/Heroku).
 import os
 import smtplib
 from threading import RLock
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import List, Dict, Optional
 from email.message import EmailMessage
 from urllib import request
@@ -34,6 +34,7 @@ class UserModel(Base, UserMixin):
     last_name = Column(String, nullable=False)
     password_hash = Column(String, nullable=False)
     created_at = Column(Date, nullable=False)
+    last_login = Column(DateTime, nullable=True)
 
     courses = relationship("CourseModel", back_populates="user", cascade="all, delete-orphan",
                            foreign_keys="CourseModel.user_id")
@@ -212,6 +213,7 @@ class DatabaseManager:
                 ('deadlines', 'user_id INTEGER REFERENCES users(id)'),
                 ('study_sessions', 'user_id INTEGER REFERENCES users(id)'),
                 ('study_sessions', f"start_time VARCHAR(5) NOT NULL DEFAULT '{DEFAULT_STUDY_TIME}'"),
+                ('users', 'last_login DATETIME'),
             ]:
                 try:
                     conn.execute(
@@ -562,6 +564,88 @@ class DatabaseManager:
         except Exception:
             session.rollback()
             return False
+        finally:
+            session.close()
+
+    def update_last_login(self, user_id: int) -> None:
+        """Stamp the current UTC time as last_login for the given user."""
+        session = self.get_session()
+        try:
+            user = session.query(UserModel).filter_by(id=user_id).first()
+            if user:
+                user.last_login = datetime.utcnow()
+                session.commit()
+        except Exception:
+            session.rollback()
+        finally:
+            session.close()
+
+    # ==================== ADMIN OPERATIONS ====================
+
+    def get_all_users_with_stats(self) -> list:
+        """Return all users with per-user course/session/completion counts and last_login."""
+        session = self.get_session()
+        try:
+            users = session.query(UserModel).order_by(UserModel.created_at.desc()).all()
+            result = []
+            for u in users:
+                courses = session.query(CourseModel).filter_by(user_id=u.id).count()
+                total_sessions = session.query(StudySessionModel).filter_by(user_id=u.id).count()
+                completed = session.query(StudySessionModel).filter_by(
+                    user_id=u.id, completion_status=True).count()
+                result.append({
+                    'id': u.id,
+                    'full_name': u.full_name,
+                    'email': u.email,
+                    'created_at': u.created_at,
+                    'last_login': u.last_login,
+                    'courses': courses,
+                    'total_sessions': total_sessions,
+                    'completed_sessions': completed,
+                })
+            return result
+        finally:
+            session.close()
+
+    def get_platform_stats(self) -> dict:
+        """Return aggregate platform-wide stats."""
+        session = self.get_session()
+        try:
+            total_users = session.query(UserModel).count()
+            total_courses = session.query(CourseModel).count()
+            total_sessions = session.query(StudySessionModel).count()
+            completed_sessions = session.query(StudySessionModel).filter_by(
+                completion_status=True).count()
+            notifs_sent = session.query(ReminderModel).filter_by(status='sent').count()
+            notifs_failed = session.query(ReminderModel).filter_by(status='failed').count()
+            notifs_pending = session.query(ReminderModel).filter_by(status='pending').count()
+            return {
+                'total_users': total_users,
+                'total_courses': total_courses,
+                'total_sessions': total_sessions,
+                'completed_sessions': completed_sessions,
+                'notifs_sent': notifs_sent,
+                'notifs_failed': notifs_failed,
+                'notifs_pending': notifs_pending,
+            }
+        finally:
+            session.close()
+
+    def get_weekly_registrations(self, weeks: int = 8) -> list:
+        """Return new-user counts per week for the last N weeks (oldest first)."""
+        session = self.get_session()
+        try:
+            today = datetime.utcnow().date()
+            result = []
+            for i in range(weeks - 1, -1, -1):
+                week_start = today - timedelta(days=today.weekday() + 7 * i)
+                week_end = week_start + timedelta(days=6)
+                count = session.query(UserModel).filter(
+                    UserModel.created_at >= week_start,
+                    UserModel.created_at <= week_end,
+                ).count()
+                result.append({'week': week_start.strftime('%b %d'), 'count': count})
+            return result
         finally:
             session.close()
 

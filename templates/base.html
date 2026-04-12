@@ -38,6 +38,11 @@
                             {% endif %}
                         </a>
                     </li>
+                    {% if current_user_is_admin %}
+                    <li class="nav-item">
+                        <a class="nav-link text-warning fw-semibold" href="{{ url_for('admin_dashboard') }}">🛡 Admin</a>
+                    </li>
+                    {% endif %}
                 </ul>
                 <ul class="navbar-nav ms-auto">
                     {% if current_user.is_authenticated %}
@@ -93,7 +98,7 @@
 
     <footer class="footer mt-5 py-3 bg-light">
         <div class="container text-center text-muted">
-            <small>&copy; 2026 Automated Study Planner | Version 0.7.0 (Analytics)</small>
+            <small>&copy; 2026 Automated Study Planner | Version 0.8.0 (Admin Dashboard)</small>
         </div>
     </footer>
 

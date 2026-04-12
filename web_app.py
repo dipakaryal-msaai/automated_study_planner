@@ -200,6 +200,17 @@ def get_smtp_status():
     }
 
 
+def get_admin_emails() -> set:
+    """Return the set of email addresses that have admin access (from ADMIN_EMAILS env var)."""
+    raw = os.getenv('ADMIN_EMAILS', '')
+    return {e.strip().lower() for e in raw.split(',') if e.strip()}
+
+
+def is_admin(user) -> bool:
+    """Return True if the given user has admin privileges."""
+    return user.is_authenticated and user.email.lower() in get_admin_emails()
+
+
 def get_reset_token(email: str) -> str:
     """Generate a signed, time-limited password-reset token for the given email."""
     s = URLSafeTimedSerializer(app.secret_key)
@@ -273,13 +284,14 @@ def start_notification_scheduler():
 
 @app.context_processor
 def inject_notification_summary():
-    """Expose notification counts to all templates."""
+    """Expose notification counts and admin flag to all templates."""
     if request.endpoint == 'static' or not current_user.is_authenticated:
-        return {'pending_notification_count': 0}
+        return {'pending_notification_count': 0, 'current_user_is_admin': False}
     return {
         'pending_notification_count': len(
             serialize_notifications(user_id=current_user.id, status='pending')
-        )
+        ),
+        'current_user_is_admin': is_admin(current_user),
     }
 
 
@@ -420,6 +432,7 @@ def auth_login():
             return render_template('login.html')
 
         login_user(user)
+        db.update_last_login(user.id)
         flash(f'Welcome back, {user.first_name}!', 'success')
         next_page = request.args.get('next')
         return redirect(next_page or url_for('index'))
@@ -1031,6 +1044,27 @@ def analytics():
         doughnut_json=json.dumps([completed_sessions, remaining_sessions]),
         # upcoming deadlines table
         upcoming_deadlines=upcoming_deadlines,
+    )
+
+
+@app.route('/admin')
+@login_required
+def admin_dashboard():
+    """Platform-wide admin dashboard — restricted to ADMIN_EMAILS."""
+    if not is_admin(current_user):
+        flash('You do not have permission to access the admin dashboard.', 'danger')
+        return redirect(url_for('index'))
+
+    stats = db.get_platform_stats()
+    users = db.get_all_users_with_stats()
+    weekly_regs = db.get_weekly_registrations(weeks=8)
+
+    return render_template(
+        'admin.html',
+        stats=stats,
+        users=users,
+        week_labels_json=json.dumps([w['week'] for w in weekly_regs]),
+        week_counts_json=json.dumps([w['count'] for w in weekly_regs]),
     )
 
 

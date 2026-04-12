@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard – Study Planner{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="display-5">🛡 Admin Dashboard</h1>
+    <span class="badge bg-danger fs-6">Admin Only</span>
+</div>
+
+{# ── Overview cards ────────────────────────────────────────────────────────── #}
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card bg-primary text-white text-center h-100">
+            <div class="card-body">
+                <h2 class="display-5 fw-bold">{{ stats.total_users }}</h2>
+                <p class="mb-0">Total Users</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card bg-info text-white text-center h-100">
+            <div class="card-body">
+                <h2 class="display-5 fw-bold">{{ stats.total_courses }}</h2>
+                <p class="mb-0">Total Courses</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card bg-success text-white text-center h-100">
+            <div class="card-body">
+                <h2 class="display-5 fw-bold">{{ stats.completed_sessions }}</h2>
+                <p class="mb-0 small">Completed Sessions</p>
+                <p class="mb-0 small opacity-75">of {{ stats.total_sessions }} total</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-white text-center h-100
+            {% if stats.notifs_failed > 0 %}bg-danger{% else %}bg-secondary{% endif %}">
+            <div class="card-body">
+                <h2 class="display-5 fw-bold">{{ stats.notifs_sent }}</h2>
+                <p class="mb-0 small">Emails Sent</p>
+                {% if stats.notifs_failed > 0 %}
+                <p class="mb-0 small opacity-75">⚠️ {{ stats.notifs_failed }} failed</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{# ── Notification health bar ───────────────────────────────────────────────── #}
+{% set notif_total = stats.notifs_sent + stats.notifs_failed + stats.notifs_pending %}
+{% if notif_total > 0 %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-2">Notification Health</h5>
+        <div class="progress" style="height: 22px;">
+            {% if stats.notifs_sent %}
+            <div class="progress-bar bg-success" style="width: {{ (stats.notifs_sent / notif_total * 100)|round }}%">
+                {{ stats.notifs_sent }} sent
+            </div>
+            {% endif %}
+            {% if stats.notifs_pending %}
+            <div class="progress-bar bg-warning text-dark" style="width: {{ (stats.notifs_pending / notif_total * 100)|round }}%">
+                {{ stats.notifs_pending }} pending
+            </div>
+            {% endif %}
+            {% if stats.notifs_failed %}
+            <div class="progress-bar bg-danger" style="width: {{ (stats.notifs_failed / notif_total * 100)|round }}%">
+                {{ stats.notifs_failed }} failed
+            </div>
+            {% endif %}
+        </div>
+        {% if stats.notifs_failed > 0 %}
+        <p class="text-danger small mt-2 mb-0">
+            ⚠️ Emails are failing.
+            <a href="{{ url_for('notification_settings') }}">Check SMTP settings →</a>
+        </p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+{# ── Weekly registrations chart ────────────────────────────────────────────── #}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title">New User Registrations (Last 8 Weeks)</h5>
+        <canvas id="regChart" height="80"></canvas>
+    </div>
+</div>
+
+{# ── Users table ───────────────────────────────────────────────────────────── #}
+<div class="card mb-4">
+    <div class="card-body">
+        <h5 class="card-title mb-3">All Users ({{ users|length }})</h5>
+        {% if users %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle table-sm">
+                <thead class="table-light">
+                    <tr>
+                        <th>#</th>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Registered</th>
+                        <th>Last Login</th>
+                        <th class="text-center">Courses</th>
+                        <th class="text-center">Sessions</th>
+                        <th class="text-center">Completed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for u in users %}
+                    <tr>
+                        <td class="text-muted small">{{ u.id }}</td>
+                        <td>{{ u.full_name }}</td>
+                        <td class="text-muted small">{{ u.email }}</td>
+                        <td class="small">{{ u.created_at }}</td>
+                        <td class="small">
+                            {% if u.last_login %}
+                                {{ u.last_login.strftime('%Y-%m-%d %H:%M') }}
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">{{ u.courses }}</td>
+                        <td class="text-center">{{ u.total_sessions }}</td>
+                        <td class="text-center">
+                            {% if u.total_sessions > 0 %}
+                                <span class="badge bg-success">
+                                    {{ u.completed_sessions }}/{{ u.total_sessions }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">—</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-muted mb-0">No users registered yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+new Chart(document.getElementById('regChart'), {
+    type: 'bar',
+    data: {
+        labels: {{ week_labels_json|safe }},
+        datasets: [{
+            label: 'New Users',
+            data: {{ week_counts_json|safe }},
+            backgroundColor: 'rgba(13, 110, 253, 0.7)',
+            borderColor: 'rgba(13, 110, 253, 1)',
+            borderWidth: 1,
+            borderRadius: 4,
+        }]
+    },
+    options: {
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+            y: { beginAtZero: true, ticks: { stepSize: 1 } }
+        }
+    }
+});
+</script>
+{% endblock %}
