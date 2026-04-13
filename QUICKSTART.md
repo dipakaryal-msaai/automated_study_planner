@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 4)
+# Quick Start Guide - Flask Web App (Updated for Chunk 8)
 
 ## First-Time Setup
 
@@ -66,6 +66,16 @@ This converts your JSON files to SQLite database. Your original files are backed
   - 🟡 Yellow = 7 days or less (Soon)
   - 🟢 Green = More than 7 days (On track)
 
+### Admin Access
+
+If you want to use the admin dashboard, set approved admin emails before starting the app:
+
+```bash
+export ADMIN_EMAILS=admin@example.com,owner@example.com
+```
+
+Then sign in with one of those accounts and open `/admin`.
+
 ## Features at a Glance
 
 ### Dashboard
@@ -103,7 +113,7 @@ This converts your JSON files to SQLite database. Your original files are backed
    - Close and reopen anytime - your data is safe!
    - No manual saving required
 
-5. **Database advantages** (NEW in Chunk 4)
+5. **Database advantages**
    - Faster queries and better performance
    - Data integrity with foreign keys and constraints
    - Ready for PostgreSQL deployment on Heroku
@@ -130,7 +140,7 @@ pip install -r requirements.txt
 - Check migration script output for errors
 - Original JSON files are backed up as `.json.bak`
 
-## Database Information (NEW in Chunk 4)
+## Database Information
 
 **SQLite Location**: `data/study_planner.db`
 

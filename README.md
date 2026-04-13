@@ -1,7 +1,7 @@
-# Automated Study Planner - Flask Web App (Chunk 1-7)
+# Automated Study Planner - Flask Web App (Chunk 1-8)
 
 ## Overview
-A comprehensive study planner application with both CLI and Web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, and lightweight daily outbound reminders for authenticated web users.
+A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, and an admin dashboard for platform oversight.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -20,6 +20,7 @@ A comprehensive study planner application with both CLI and Web interfaces. Feat
 - ✅ **Guest Mode** - Explore all features without registering; data is session-only with clear warnings (NEW in Chunk 5)
 - ✅ **Daily Summary Notifications** - Morning outbound reminders via email and optional open-source `ntfy` push (NEW in Chunk 6)
 - ✅ **Progress Tracking & Analytics Dashboard** - Completion rate, study streak, per-subject breakdowns, weekly trend charts (NEW in Chunk 7)
+- ✅ **Admin Dashboard** - Platform-wide overview and user activity monitoring protected by `ADMIN_EMAILS` (NEW in Chunk 8)
 
 ## Setup
 
@@ -103,6 +104,7 @@ python main.py
 - **Notification Queue** - View pending, sent, and failed daily reminders
 - **Notification Settings** - Configure morning summary time and optional `ntfy` topic
 - **Analytics Dashboard** - Completion rate, study hours, day streak, sessions by subject, weekly trend charts, upcoming deadlines
+- **Admin Dashboard** - Platform totals, recent registration trends, and per-user activity for approved admin accounts
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -160,6 +162,20 @@ export NOTIFICATION_POLL_INTERVAL_SECONDS=60
 
 - Set `NOTIFICATION_SCHEDULER_ENABLED=0` if you only want to use `notification_worker.py`
 - `NOTIFICATION_POLL_INTERVAL_SECONDS` controls how often due reminders are checked
+
+## Admin Dashboard (Chunk 8)
+
+Chunk 8 adds a restricted admin dashboard for platform-level monitoring.
+
+### Configuration
+
+Grant admin access by setting a comma-separated list of email addresses:
+
+```bash
+export ADMIN_EMAILS=admin@example.com,owner@example.com
+```
+
+Only authenticated users whose email appears in `ADMIN_EMAILS` can access `/admin`.
 
 ### Example Workflow
 ```
@@ -253,10 +269,9 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 8+)
+## Future Improvements (Chunks 9+)
 - Advanced scheduling algorithms (ML-based optimization)
 - Calendar integration (Google Calendar, Outlook)
-- Progress tracking and analytics dashboard
 - Mobile responsive enhancements
 - REST API endpoints for mobile apps
 
@@ -282,7 +297,8 @@ automated_study_planner/
 │   ├── edit_deadline.html # Edit deadline form
 │   ├── notifications.html # Notification queue
 │   ├── notification_settings.html # Notification config
-│   └── analytics.html   # Progress & analytics dashboard (NEW in Chunk 7)
+│   ├── analytics.html   # Progress & analytics dashboard (NEW in Chunk 7)
+│   └── admin.html       # Platform admin dashboard (NEW in Chunk 8)
 ├── static/              # Static assets
 │   └── css/
 │       └── style.css    # Custom styling
@@ -295,9 +311,11 @@ automated_study_planner/
 - **Chunk 1**: Initial CLI prototype with core functionality
 - **Chunk 2**: Refactored with persistent JSON storage and dataclasses
 - **Chunk 3**: Flask web application with Bootstrap UI and color-coded deadlines
+- **Chunk 4**: SQLite/PostgreSQL database backend and JSON migration utility
 - **Chunk 5**: Authentication system (register/login/logout, multi-user data isolation, guest mode)
 - **Chunk 6**: Daily summary notifications for authenticated web users
 - **Chunk 7**: Progress tracking & analytics dashboard (completion rate, study streak, Chart.js visualizations)
+- **Chunk 8**: Admin dashboard with `ADMIN_EMAILS` access control
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
@@ -307,4 +325,4 @@ automated_study_planner/
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.7.0 (Chunk 7 - Analytics Dashboard)
+**Version**: 0.8.0 (Chunk 8 - Admin Dashboard)
