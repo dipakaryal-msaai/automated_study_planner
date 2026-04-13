@@ -121,6 +121,7 @@ class StudySessionModel(Base):
             task_type=self.task_type,
             duration=self.duration,
             difficulty=self.difficulty,
+            session_id=self.id,
             completion_status=self.completion_status
         )
 
@@ -261,11 +262,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_course(self, course_id: int) -> Optional[Course]:
+    def get_course(self, course_id: int, user_id: Optional[int] = None) -> Optional[Course]:
         """Get a course by ID."""
         session = self.get_session()
         try:
-            course_model = session.query(CourseModel).filter_by(id=course_id).first()
+            query = session.query(CourseModel).filter_by(id=course_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            course_model = query.first()
             return course_model.to_dataclass() if course_model else None
         finally:
             session.close()
@@ -282,12 +286,16 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def update_course(self, course_id: int, name: Optional[str] = None, 
-                     difficulty_level: Optional[int] = None) -> bool:
+    def update_course(self, course_id: int, name: Optional[str] = None,
+                      difficulty_level: Optional[int] = None,
+                      user_id: Optional[int] = None) -> bool:
         """Update a course."""
         session = self.get_session()
         try:
-            course = session.query(CourseModel).filter_by(id=course_id).first()
+            query = session.query(CourseModel).filter_by(id=course_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            course = query.first()
             if not course:
                 return False
             
@@ -301,11 +309,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def delete_course(self, course_id: int) -> bool:
+    def delete_course(self, course_id: int, user_id: Optional[int] = None) -> bool:
         """Delete a course and its associated deadlines."""
         session = self.get_session()
         try:
-            course = session.query(CourseModel).filter_by(id=course_id).first()
+            query = session.query(CourseModel).filter_by(id=course_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            course = query.first()
             if not course:
                 return False
             
@@ -323,7 +334,10 @@ class DatabaseManager:
         session = self.get_session()
         try:
             # Verify course exists
-            course = session.query(CourseModel).filter_by(id=course_id).first()
+            course_query = session.query(CourseModel).filter_by(id=course_id)
+            if user_id is not None:
+                course_query = course_query.filter_by(user_id=user_id)
+            course = course_query.first()
             if not course:
                 return None
             
@@ -339,11 +353,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def get_deadline(self, deadline_id: int) -> Optional[Deadline]:
+    def get_deadline(self, deadline_id: int, user_id: Optional[int] = None) -> Optional[Deadline]:
         """Get a deadline by ID."""
         session = self.get_session()
         try:
-            deadline_model = session.query(DeadlineModel).filter_by(id=deadline_id).first()
+            query = session.query(DeadlineModel).filter_by(id=deadline_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            deadline_model = query.first()
             return deadline_model.to_dataclass() if deadline_model else None
         finally:
             session.close()
@@ -361,14 +378,26 @@ class DatabaseManager:
             session.close()
     
     def update_deadline(self, deadline_id: int, due_date: Optional[str] = None,
-                        task_type: Optional[str] = None) -> bool:
+                        task_type: Optional[str] = None, course_id: Optional[int] = None,
+                        user_id: Optional[int] = None) -> bool:
         """Update a deadline."""
         session = self.get_session()
         try:
-            deadline = session.query(DeadlineModel).filter_by(id=deadline_id).first()
+            query = session.query(DeadlineModel).filter_by(id=deadline_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            deadline = query.first()
             if not deadline:
                 return False
-            
+
+            if course_id is not None:
+                course_query = session.query(CourseModel).filter_by(id=course_id)
+                if user_id is not None:
+                    course_query = course_query.filter_by(user_id=user_id)
+                course = course_query.first()
+                if not course:
+                    return False
+                deadline.course_id = course_id
             if due_date is not None:
                 deadline.due_date = datetime.strptime(due_date, "%Y-%m-%d").date()
             if task_type is not None:
@@ -378,11 +407,14 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def delete_deadline(self, deadline_id: int) -> bool:
+    def delete_deadline(self, deadline_id: int, user_id: Optional[int] = None) -> bool:
         """Delete a deadline."""
         session = self.get_session()
         try:
-            deadline = session.query(DeadlineModel).filter_by(id=deadline_id).first()
+            query = session.query(DeadlineModel).filter_by(id=deadline_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            deadline = query.first()
             if not deadline:
                 return False
 
@@ -431,6 +463,21 @@ class DatabaseManager:
             return [s.to_dataclass() for s in sessions]
         finally:
             session.close()
+
+    def get_study_session(self, session_id: int,
+                          user_id: Optional[int] = None) -> Optional[StudySession]:
+        """Get a study session by ID within the requested scope."""
+        session = self.get_session()
+        try:
+            query = session.query(StudySessionModel).filter_by(id=session_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            else:
+                query = query.filter(StudySessionModel.user_id.is_(None))
+            study_session = query.first()
+            return study_session.to_dataclass() if study_session else None
+        finally:
+            session.close()
     
     def update_study_session_status(self, session_index: int, completion_status: bool,
                                      user_id: Optional[int] = None) -> bool:
@@ -452,6 +499,25 @@ class DatabaseManager:
                 session.commit()
                 return True
             return False
+        finally:
+            session.close()
+
+    def update_study_session_status_by_id(self, session_id: int, completion_status: bool,
+                                          user_id: Optional[int] = None) -> bool:
+        """Update completion status of a study session by stable database ID."""
+        session = self.get_session()
+        try:
+            query = session.query(StudySessionModel).filter_by(id=session_id)
+            if user_id is not None:
+                query = query.filter_by(user_id=user_id)
+            else:
+                query = query.filter(StudySessionModel.user_id.is_(None))
+            study_session = query.first()
+            if not study_session:
+                return False
+            study_session.completion_status = completion_status
+            session.commit()
+            return True
         finally:
             session.close()
     

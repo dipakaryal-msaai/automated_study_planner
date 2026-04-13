@@ -1,7 +1,7 @@
-# Automated Study Planner - Flask Web App (Chunk 1-8)
+# Automated Study Planner - Flask Web App (Chunk 1-9)
 
 ## Overview
-A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, and an admin dashboard for platform oversight.
+A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, an admin dashboard, and session-authenticated REST API support.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -21,6 +21,7 @@ A comprehensive study planner application with both CLI and web interfaces. Feat
 - ✅ **Daily Summary Notifications** - Morning outbound reminders via email and optional open-source `ntfy` push (NEW in Chunk 6)
 - ✅ **Progress Tracking & Analytics Dashboard** - Completion rate, study streak, per-subject breakdowns, weekly trend charts (NEW in Chunk 7)
 - ✅ **Admin Dashboard** - Platform-wide overview and user activity monitoring protected by `ADMIN_EMAILS` (NEW in Chunk 8)
+- ✅ **REST API Support** - Session-authenticated JSON endpoints for courses, deadlines, study sessions, and study plan generation (NEW in Chunk 9)
 
 ## Setup
 
@@ -90,6 +91,54 @@ python notification_worker.py --once
 For command-line interface:
 ```bash
 python main.py
+```
+
+### REST API
+
+The app exposes JSON endpoints under `/api/v1` for authenticated users. The API uses the same session/cookie login model as the web UI.
+
+1. Log in through the existing web auth flow to establish a session cookie.
+2. Send JSON requests to `/api/v1/...` with that cookie.
+3. Read `/api/v1/auth/status` to confirm whether the current client is authenticated.
+
+Write endpoints expect `Content-Type: application/json` and return JSON errors instead of HTML redirects.
+
+#### Core Endpoints
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/v1/auth/status` | Check session auth status and current user info |
+| `GET`, `POST` | `/api/v1/courses` | List or create courses |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/courses/<id>` | Read, update, or delete a course |
+| `GET`, `POST` | `/api/v1/deadlines` | List or create deadlines |
+| `GET`, `PATCH`, `DELETE` | `/api/v1/deadlines/<id>` | Read, update, or delete a deadline |
+| `GET` | `/api/v1/study-sessions` | List generated study sessions |
+| `PATCH` | `/api/v1/study-sessions/<id>` | Update session completion status |
+| `POST` | `/api/v1/study-plan/generate` | Generate and persist a fresh study plan |
+
+#### Example `curl` workflow
+
+```bash
+# Log in and save the Flask session cookie
+curl -i -c cookies.txt \
+  -X POST http://127.0.0.1:5000/auth/login \
+  -d "email=you@example.com" \
+  -d "password=your-password"
+
+# Confirm auth status
+curl -b cookies.txt http://127.0.0.1:5000/api/v1/auth/status
+
+# Create a course
+curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Calculus","difficulty_level":4}' \
+  http://127.0.0.1:5000/api/v1/courses
+
+# Generate the study plan
+curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  http://127.0.0.1:5000/api/v1/study-plan/generate
 ```
 
 ### Web Interface Features
@@ -269,11 +318,10 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 9+)
+## Future Improvements (Chunks 10+)
 - Advanced scheduling algorithms (ML-based optimization)
 - Calendar integration (Google Calendar, Outlook)
 - Mobile responsive enhancements
-- REST API endpoints for mobile apps
 
 ## Project Structure
 ```
@@ -316,6 +364,7 @@ automated_study_planner/
 - **Chunk 6**: Daily summary notifications for authenticated web users
 - **Chunk 7**: Progress tracking & analytics dashboard (completion rate, study streak, Chart.js visualizations)
 - **Chunk 8**: Admin dashboard with `ADMIN_EMAILS` access control
+- **Chunk 9**: Session-authenticated REST API for core planner resources
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
@@ -325,4 +374,4 @@ automated_study_planner/
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.8.0 (Chunk 8 - Admin Dashboard)
+**Version**: 0.9.0 (Chunk 9 - REST API Support)

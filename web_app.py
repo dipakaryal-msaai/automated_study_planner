@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 from threading import Event, Thread
 from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
-from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
 from database import DatabaseManager, UserModel
@@ -19,6 +19,7 @@ from models import Course, Deadline, StudySession
 
 app = Flask(__name__)
 app.secret_key = 'study_planner_secret_key_2024'
+API_PREFIX = '/api/v1'
 
 # ---------------------------------------------------------------------------
 # Flask-Login setup
@@ -38,6 +39,16 @@ _scheduler_started = False
 @login_manager.user_loader
 def load_user(user_id: str):
     return db.get_user_by_id(int(user_id))
+
+
+@login_manager.unauthorized_handler
+def handle_unauthorized():
+    """Return JSON for API auth failures and preserve redirects for the web UI."""
+    if request.path.startswith('/api/'):
+        return api_error('Authentication required.', 401)
+
+    flash(login_manager.login_message, login_manager.login_message_category)
+    return redirect(url_for('auth_login', next=request.url))
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +266,399 @@ def serialize_notifications(user_id, status=None, limit=None):
     return notifications
 
 
+def api_error(message, status_code, errors=None):
+    """Build a consistent JSON error response."""
+    payload = {'error': message}
+    if errors:
+        payload['errors'] = errors
+    return jsonify(payload), status_code
+
+
+def get_api_payload():
+    """Parse a JSON object request body for REST API routes."""
+    if not request.is_json:
+        return None, api_error('Request body must be JSON.', 415)
+
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return None, api_error('Request body must be a JSON object.', 400)
+
+    return payload, None
+
+
+def serialize_api_user(user):
+    """Serialize the logged-in user for the API auth status endpoint."""
+    if not user or not user.is_authenticated:
+        return None
+
+    return {
+        'id': user.id,
+        'email': user.email,
+        'first_name': user.first_name,
+        'last_name': user.last_name,
+        'full_name': user.full_name,
+        'is_admin': is_admin(user),
+    }
+
+
+def serialize_api_course(course):
+    """Serialize a course dataclass for API responses."""
+    return {
+        'id': course.course_id,
+        'name': course.name,
+        'difficulty_level': course.difficulty_level,
+        'added_date': course.added_date,
+    }
+
+
+def serialize_api_deadline(deadline, courses):
+    """Serialize a deadline dataclass for API responses."""
+    course = courses.get(deadline.course_id)
+    due_date = deadline.due_date
+    is_past = False
+    try:
+        is_past = datetime.strptime(due_date, "%Y-%m-%d").date() < datetime.now().date()
+    except ValueError:
+        pass
+
+    return {
+        'id': deadline.deadline_id,
+        'course_id': deadline.course_id,
+        'course_name': course.name if course else None,
+        'due_date': due_date,
+        'task_type': deadline.task_type,
+        'color': get_deadline_color(due_date, False),
+        'is_past': is_past,
+    }
+
+
+def serialize_api_study_session(study_session):
+    """Serialize a study session dataclass for API responses."""
+    return {
+        'id': study_session.session_id,
+        'date': study_session.date,
+        'start_time': study_session.start_time,
+        'subject': study_session.subject,
+        'task_type': study_session.task_type,
+        'duration': study_session.duration,
+        'difficulty': study_session.difficulty,
+        'completion_status': study_session.completion_status,
+        'color': get_deadline_color(study_session.date, study_session.completion_status),
+    }
+
+
+def parse_api_int(value, field_name):
+    """Parse an integer field from API input."""
+    try:
+        return int(value), None
+    except (TypeError, ValueError):
+        return None, api_error(f'{field_name} must be an integer.', 400)
+
+
+def parse_api_date(value, field_name):
+    """Parse a YYYY-MM-DD date string from API input."""
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None, api_error(f'{field_name} must use YYYY-MM-DD format.', 400)
+    return parsed, None
+
+
 def run_notification_scheduler():
     """Background loop that periodically sends due notifications."""
     db.process_due_notifications()
     while not _scheduler_stop_event.wait(NOTIFICATION_POLL_INTERVAL_SECONDS):
         db.process_due_notifications()
+
+
+@app.route(f'{API_PREFIX}/auth/status')
+def api_auth_status():
+    """Report whether the current request is authenticated via the session cookie."""
+    return jsonify({
+        'authenticated': current_user.is_authenticated,
+        'user': serialize_api_user(current_user),
+    })
+
+
+@app.route(f'{API_PREFIX}/courses', methods=['GET', 'POST'])
+@login_required
+def api_courses():
+    """List or create courses for the authenticated user."""
+    if request.method == 'GET':
+        courses = sorted(
+            db.get_all_courses(user_id=current_user.id).values(),
+            key=lambda course: course.course_id
+        )
+        return jsonify({
+            'courses': [serialize_api_course(course) for course in courses],
+            'count': len(courses),
+        })
+
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    name = str(payload.get('name', '')).strip()
+    if not name:
+        return api_error('Course name cannot be empty.', 400)
+
+    difficulty_value = payload.get('difficulty_level')
+    difficulty, error_response = parse_api_int(difficulty_value, 'difficulty_level')
+    if error_response:
+        return error_response
+    if not 1 <= difficulty <= 5:
+        return api_error('difficulty_level must be between 1 and 5.', 400)
+
+    course = db.add_course(
+        name=name,
+        difficulty_level=difficulty,
+        added_date=datetime.now().strftime("%Y-%m-%d"),
+        user_id=current_user.id,
+    )
+    return jsonify({
+        'message': 'Course created.',
+        'course': serialize_api_course(course),
+    }), 201
+
+
+@app.route(f'{API_PREFIX}/courses/<int:course_id>', methods=['GET', 'PATCH', 'DELETE'])
+@login_required
+def api_course_detail(course_id):
+    """Read, update, or delete a single scoped course."""
+    course = db.get_course(course_id, user_id=current_user.id)
+    if course is None:
+        return api_error('Course not found.', 404)
+
+    if request.method == 'GET':
+        return jsonify({'course': serialize_api_course(course)})
+
+    if request.method == 'DELETE':
+        db.delete_course(course_id, user_id=current_user.id)
+        return jsonify({'message': 'Course deleted.'})
+
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    name = None
+    difficulty = None
+
+    if 'name' in payload:
+        name = str(payload.get('name', '')).strip()
+        if not name:
+            return api_error('Course name cannot be empty.', 400)
+
+    if 'difficulty_level' in payload:
+        difficulty, error_response = parse_api_int(payload.get('difficulty_level'), 'difficulty_level')
+        if error_response:
+            return error_response
+        if not 1 <= difficulty <= 5:
+            return api_error('difficulty_level must be between 1 and 5.', 400)
+
+    if name is None and difficulty is None:
+        return api_error('Provide at least one of name or difficulty_level.', 400)
+
+    db.update_course(
+        course_id,
+        name=name,
+        difficulty_level=difficulty,
+        user_id=current_user.id,
+    )
+    updated_course = db.get_course(course_id, user_id=current_user.id)
+    return jsonify({
+        'message': 'Course updated.',
+        'course': serialize_api_course(updated_course),
+    })
+
+
+@app.route(f'{API_PREFIX}/deadlines', methods=['GET', 'POST'])
+@login_required
+def api_deadlines():
+    """List or create deadlines for the authenticated user."""
+    courses = db.get_all_courses(user_id=current_user.id)
+
+    if request.method == 'GET':
+        deadlines = sorted(
+            db.get_all_deadlines(user_id=current_user.id).values(),
+            key=lambda deadline: deadline.due_date
+        )
+        return jsonify({
+            'deadlines': [serialize_api_deadline(deadline, courses) for deadline in deadlines],
+            'count': len(deadlines),
+        })
+
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    course_id, error_response = parse_api_int(payload.get('course_id'), 'course_id')
+    if error_response:
+        return error_response
+
+    due_date_raw = str(payload.get('due_date', '')).strip()
+    due_date, error_response = parse_api_date(due_date_raw, 'due_date')
+    if error_response:
+        return error_response
+    if due_date < datetime.now().date():
+        return api_error('due_date must be today or later.', 400)
+
+    task_type = str(payload.get('task_type', '')).strip()
+    if not task_type:
+        return api_error('task_type cannot be empty.', 400)
+
+    deadline = db.add_deadline(
+        course_id=course_id,
+        due_date=due_date.strftime("%Y-%m-%d"),
+        task_type=task_type,
+        user_id=current_user.id,
+    )
+    if deadline is None:
+        return api_error('Course not found.', 404)
+
+    return jsonify({
+        'message': 'Deadline created.',
+        'deadline': serialize_api_deadline(deadline, courses),
+    }), 201
+
+
+@app.route(f'{API_PREFIX}/deadlines/<int:deadline_id>', methods=['GET', 'PATCH', 'DELETE'])
+@login_required
+def api_deadline_detail(deadline_id):
+    """Read, update, or delete a single scoped deadline."""
+    courses = db.get_all_courses(user_id=current_user.id)
+    deadline = db.get_deadline(deadline_id, user_id=current_user.id)
+    if deadline is None:
+        return api_error('Deadline not found.', 404)
+
+    if request.method == 'GET':
+        return jsonify({'deadline': serialize_api_deadline(deadline, courses)})
+
+    if request.method == 'DELETE':
+        db.delete_deadline(deadline_id, user_id=current_user.id)
+        return jsonify({'message': 'Deadline deleted.'})
+
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    new_course_id = None
+    due_date_str = None
+    task_type = None
+
+    if 'course_id' in payload:
+        new_course_id, error_response = parse_api_int(payload.get('course_id'), 'course_id')
+        if error_response:
+            return error_response
+        if new_course_id not in courses:
+            return api_error('Course not found.', 404)
+
+    if 'due_date' in payload:
+        due_date_raw = str(payload.get('due_date', '')).strip()
+        due_date, error_response = parse_api_date(due_date_raw, 'due_date')
+        if error_response:
+            return error_response
+        due_date_str = due_date.strftime("%Y-%m-%d")
+
+    if 'task_type' in payload:
+        task_type = str(payload.get('task_type', '')).strip()
+        if not task_type:
+            return api_error('task_type cannot be empty.', 400)
+
+    if new_course_id is None and due_date_str is None and task_type is None:
+        return api_error('Provide at least one of course_id, due_date, or task_type.', 400)
+
+    db.update_deadline(
+        deadline_id,
+        due_date=due_date_str,
+        task_type=task_type,
+        course_id=new_course_id,
+        user_id=current_user.id,
+    )
+    updated_deadline = db.get_deadline(deadline_id, user_id=current_user.id)
+    updated_courses = db.get_all_courses(user_id=current_user.id)
+    return jsonify({
+        'message': 'Deadline updated.',
+        'deadline': serialize_api_deadline(updated_deadline, updated_courses),
+    })
+
+
+@app.route(f'{API_PREFIX}/study-sessions', methods=['GET'])
+@login_required
+def api_study_sessions():
+    """List study sessions for the authenticated user."""
+    study_sessions = db.get_all_study_sessions(user_id=current_user.id)
+    completed_count = sum(1 for session in study_sessions if session.completion_status)
+    return jsonify({
+        'study_sessions': [serialize_api_study_session(session) for session in study_sessions],
+        'count': len(study_sessions),
+        'completed_count': completed_count,
+    })
+
+
+@app.route(f'{API_PREFIX}/study-sessions/<int:session_id>', methods=['PATCH'])
+@login_required
+def api_study_session_detail(session_id):
+    """Update a single study session."""
+    study_session = db.get_study_session(session_id, user_id=current_user.id)
+    if study_session is None:
+        return api_error('Study session not found.', 404)
+
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    if 'completion_status' not in payload:
+        return api_error('Provide completion_status.', 400)
+    if not isinstance(payload['completion_status'], bool):
+        return api_error('completion_status must be true or false.', 400)
+
+    db.update_study_session_status_by_id(
+        session_id,
+        payload['completion_status'],
+        user_id=current_user.id,
+    )
+    updated_session = db.get_study_session(session_id, user_id=current_user.id)
+    return jsonify({
+        'message': 'Study session updated.',
+        'study_session': serialize_api_study_session(updated_session),
+    })
+
+
+@app.route(f'{API_PREFIX}/study-plan/generate', methods=['POST'])
+@login_required
+def api_generate_study_plan():
+    """Generate and persist a fresh study plan for the authenticated user."""
+    payload, error_response = get_api_payload()
+    if error_response:
+        return error_response
+
+    start_date_str = payload.get('start_date')
+    if start_date_str is not None:
+        start_date_str = str(start_date_str).strip()
+        if start_date_str:
+            _, error_response = parse_api_date(start_date_str, 'start_date')
+            if error_response:
+                return error_response
+        else:
+            start_date_str = None
+
+    courses = db.get_all_courses(user_id=current_user.id)
+    deadlines = db.get_all_deadlines(user_id=current_user.id)
+    if not deadlines:
+        return api_error('Add deadlines before generating a study plan.', 400)
+
+    study_plans = generate_study_plan_logic(courses, deadlines, start_date_str=start_date_str)
+    save_study_plans(study_plans)
+    saved_study_sessions = db.get_all_study_sessions(user_id=current_user.id)
+    generated_count = len(study_plans)
+
+    return jsonify({
+        'message': f'Study plan generated with {generated_count} new sessions.',
+        'generated_count': generated_count,
+        'total_count': len(saved_study_sessions),
+        'study_sessions': [serialize_api_study_session(session) for session in saved_study_sessions],
+        'count': len(saved_study_sessions),
+    }), 201
 
 
 def start_notification_scheduler():
@@ -808,7 +1207,12 @@ def edit_deadline(deadline_id):
             return redirect(url_for('edit_deadline', deadline_id=deadline_id))
 
         if current_user.is_authenticated:
-            success = db.update_deadline(deadline_id, due_date=due_date_str, task_type=task_type)
+            success = db.update_deadline(
+                deadline_id,
+                due_date=due_date_str,
+                task_type=task_type,
+                user_id=current_user.id,
+            )
         else:
             _guest_warn()
             raw = _guest_deadlines()
@@ -847,7 +1251,7 @@ def delete_deadline(deadline_id):
         course_name = courses[dl.course_id].name if dl.course_id in courses else "Unknown"
 
         if current_user.is_authenticated:
-            success = db.delete_deadline(deadline_id)
+            success = db.delete_deadline(deadline_id, user_id=current_user.id)
         else:
             _guest_warn()
             raw = _guest_deadlines()

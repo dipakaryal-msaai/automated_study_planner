@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 8)
+# Quick Start Guide - Flask Web App (Updated for Chunk 9)
 
 ## First-Time Setup
 
@@ -32,6 +32,9 @@ This converts your JSON files to SQLite database. Your original files are backed
 
 3. **Open your browser:**
    Navigate to: **http://127.0.0.1:5000**
+
+4. **Optional: use the REST API**
+   The app now exposes authenticated JSON endpoints under `/api/v1`.
 
 ## Using the Web Interface
 
@@ -75,6 +78,27 @@ export ADMIN_EMAILS=admin@example.com,owner@example.com
 ```
 
 Then sign in with one of those accounts and open `/admin`.
+
+### REST API Access
+
+The REST API uses the same session cookie as the web app. Log in first, then reuse the saved cookie in your API client.
+
+```bash
+# Log in and store the Flask session cookie
+curl -i -c cookies.txt \
+  -X POST http://127.0.0.1:5000/auth/login \
+  -d "email=you@example.com" \
+  -d "password=your-password"
+
+# Check auth status
+curl -b cookies.txt http://127.0.0.1:5000/api/v1/auth/status
+
+# Create a course with JSON
+curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Calculus","difficulty_level":4}' \
+  http://127.0.0.1:5000/api/v1/courses
+```
 
 ## Features at a Glance
 

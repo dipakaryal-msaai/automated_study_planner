@@ -54,6 +54,7 @@ class StudySession:
     task_type: str
     duration: int
     difficulty: int
+    session_id: Optional[int] = None
     start_time: str = "18:00"
     completion_status: bool = False
     
