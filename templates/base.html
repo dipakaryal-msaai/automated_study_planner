@@ -28,6 +28,9 @@
                         <a class="nav-link" href="{{ url_for('view_deadlines') }}">Deadlines</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('help_page') }}">Help</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('analytics') }}">📊 Analytics</a>
                     </li>
                     <li class="nav-item">
@@ -73,7 +76,7 @@
         </div>
     </nav>
 
-    {% if not current_user.is_authenticated %}
+    {% if guest_session_active %}
     <div class="alert alert-warning alert-dismissible fade show mb-0 rounded-0 text-center" role="alert">
         <strong>👋 Guest Mode</strong> — Your data is temporary and will be lost when you close the browser.
         <a href="{{ url_for('auth_register') }}" class="alert-link">Create a free account</a> to save your progress!
@@ -98,7 +101,7 @@
 
     <footer class="footer mt-5 py-3 bg-light">
         <div class="container text-center text-muted">
-            <small>&copy; 2026 Automated Study Planner | Version 0.8.0 (Admin Dashboard)</small>
+            <small>&copy; 2026 Automated Study Planner | Version 1.0.0 (In-App Help Guide)</small>
         </div>
     </footer>
 

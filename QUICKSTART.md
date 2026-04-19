@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 9)
+# Quick Start Guide - Flask Web App (Updated for Chunk 10)
 
 ## First-Time Setup
 
@@ -37,6 +37,8 @@ This converts your JSON files to SQLite database. Your original files are backed
    The app now exposes authenticated JSON endpoints under `/api/v1`.
 
 ## Using the Web Interface
+
+Need a walkthrough after the app starts? Open **/help** from the navigation bar for the in-app guide.
 
 ### First Time Setup
 
@@ -99,6 +101,8 @@ curl -b cookies.txt \
   -d '{"name":"Calculus","difficulty_level":4}' \
   http://127.0.0.1:5000/api/v1/courses
 ```
+
+The in-app Help page also includes the endpoint list and sample API requests.
 
 ## Features at a Glance
 

@@ -100,6 +100,11 @@ def _next_guest_id(counter_key: str) -> int:
     return val
 
 
+def is_guest_session_active() -> bool:
+    """Return True only when the visitor explicitly entered guest mode."""
+    return bool(session.get('guest_mode')) and not current_user.is_authenticated
+
+
 # ---------------------------------------------------------------------------
 # Unified data accessors — branch on authenticated vs. guest
 # ---------------------------------------------------------------------------
@@ -685,12 +690,17 @@ def start_notification_scheduler():
 def inject_notification_summary():
     """Expose notification counts and admin flag to all templates."""
     if request.endpoint == 'static' or not current_user.is_authenticated:
-        return {'pending_notification_count': 0, 'current_user_is_admin': False}
+        return {
+            'pending_notification_count': 0,
+            'current_user_is_admin': False,
+            'guest_session_active': is_guest_session_active(),
+        }
     return {
         'pending_notification_count': len(
             serialize_notifications(user_id=current_user.id, status='pending')
         ),
         'current_user_is_admin': is_admin(current_user),
+        'guest_session_active': False,
     }
 
 
@@ -844,7 +854,7 @@ def auth_logout():
     logout_user()
     # Clear guest data too
     for key in ['guest_courses', 'guest_deadlines', 'guest_study_plans',
-                 'guest_course_ctr', 'guest_deadline_ctr']:
+                 'guest_course_ctr', 'guest_deadline_ctr', 'guest_mode']:
         session.pop(key, None)
     flash('You have been logged out.', 'info')
     return redirect(url_for('auth_login'))
@@ -926,6 +936,7 @@ def enter_guest():
     if current_user.is_authenticated:
         return redirect(url_for('index'))
     # Initialise empty guest data if not already present
+    session['guest_mode'] = True
     session.setdefault('guest_courses', {})
     session.setdefault('guest_deadlines', {})
     session.setdefault('guest_study_plans', [])
@@ -933,6 +944,28 @@ def enter_guest():
           '<a href="/auth/register" class="alert-link">Register</a> to keep your data.',
           'warning')
     return redirect(url_for('index'))
+
+
+@app.route('/help')
+def help_page():
+    """Public help page for app usage and REST API guidance."""
+    endpoint_rows = [
+        {'method': 'GET', 'path': '/api/v1/auth/status', 'description': 'Check whether the current session is authenticated.'},
+        {'method': 'GET', 'path': '/api/v1/courses', 'description': 'List the logged-in user\'s courses.'},
+        {'method': 'POST', 'path': '/api/v1/courses', 'description': 'Create a course from JSON.'},
+        {'method': 'GET', 'path': '/api/v1/courses/<id>', 'description': 'Fetch one course in the current user scope.'},
+        {'method': 'PATCH', 'path': '/api/v1/courses/<id>', 'description': 'Update course name or difficulty level.'},
+        {'method': 'DELETE', 'path': '/api/v1/courses/<id>', 'description': 'Delete a course and its related deadlines.'},
+        {'method': 'GET', 'path': '/api/v1/deadlines', 'description': 'List deadlines for the logged-in user.'},
+        {'method': 'POST', 'path': '/api/v1/deadlines', 'description': 'Create a deadline tied to one of your courses.'},
+        {'method': 'GET', 'path': '/api/v1/deadlines/<id>', 'description': 'Fetch one deadline in the current user scope.'},
+        {'method': 'PATCH', 'path': '/api/v1/deadlines/<id>', 'description': 'Update deadline course, due date, or task type.'},
+        {'method': 'DELETE', 'path': '/api/v1/deadlines/<id>', 'description': 'Delete a deadline.'},
+        {'method': 'GET', 'path': '/api/v1/study-sessions', 'description': 'List generated study sessions.'},
+        {'method': 'PATCH', 'path': '/api/v1/study-sessions/<id>', 'description': 'Mark a study session complete or incomplete.'},
+        {'method': 'POST', 'path': '/api/v1/study-plan/generate', 'description': 'Generate and persist a fresh study plan.'},
+    ]
+    return render_template('help.html', api_endpoints=endpoint_rows)
 
 
 @app.route('/')

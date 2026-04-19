@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Help - Study Planner{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-lg-8">
+        <h1 class="display-5">Help and User Guide</h1>
+        <p class="lead text-muted">
+            Learn how to use the study planner, understand guest versus account behavior,
+            and explore the REST API added in chunk 9.
+        </p>
+    </div>
+    <div class="col-lg-4">
+        <div class="card help-nav-card">
+            <div class="card-body">
+                <h2 class="h5">On this page</h2>
+                <div class="list-group list-group-flush">
+                    <a class="list-group-item list-group-item-action" href="#getting-started">Getting started</a>
+                    <a class="list-group-item list-group-item-action" href="#core-workflow">Core workflow</a>
+                    <a class="list-group-item list-group-item-action" href="#accounts-and-guest-mode">Accounts and guest mode</a>
+                    <a class="list-group-item list-group-item-action" href="#extra-features">Notifications, analytics, and admin</a>
+                    <a class="list-group-item list-group-item-action" href="#rest-api">REST API guide</a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<section id="getting-started" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">1. Getting started</h2>
+            <p>The app supports three common ways to begin:</p>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Create an account</h3>
+                        <p class="mb-0">Best for saved progress, notifications, analytics, and API access.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Continue as guest</h3>
+                        <p class="mb-0">Good for trying the app quickly, but guest data is stored only in the browser session.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Use the REST API</h3>
+                        <p class="mb-0">Log in through the web flow first, then reuse the session cookie for JSON API calls.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="core-workflow" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">2. Core study planner workflow</h2>
+            <ol class="mb-0">
+                <li><strong>Add courses</strong> from the Courses page and choose a difficulty from 1 to 5.</li>
+                <li><strong>Add deadlines</strong> from the Deadlines page and connect each one to a course.</li>
+                <li><strong>Generate a study plan</strong> from the dashboard to create scheduled study sessions.</li>
+                <li><strong>Mark sessions complete</strong> as you study so analytics and streak tracking stay accurate.</li>
+                <li><strong>Regenerate when plans change</strong>; completed sessions are kept as history while incomplete future sessions are replaced.</li>
+            </ol>
+        </div>
+    </div>
+</section>
+
+<section id="accounts-and-guest-mode" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">3. Accounts and guest mode</h2>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Mode</th>
+                            <th>What you get</th>
+                            <th>What to know</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Guest</strong></td>
+                            <td>Can add courses, deadlines, and generate a study plan.</td>
+                            <td>Data is temporary and disappears when the browser session ends.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Registered account</strong></td>
+                            <td>Saved data, notifications, analytics, and API access.</td>
+                            <td>Best choice for ongoing use across devices and sessions.</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Admin account</strong></td>
+                            <td>Everything above plus the platform admin dashboard.</td>
+                            <td>Admin access is granted only when the logged-in email appears in the <code>ADMIN_EMAILS</code> environment variable.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="extra-features" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">4. Notifications, analytics, and admin</h2>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Notifications</h3>
+                        <p class="mb-0">Authenticated users can configure daily reminder time, email delivery, and an optional <code>ntfy</code> topic under Settings.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Analytics</h3>
+                        <p class="mb-0">The Analytics page shows completion rate, total study hours, streaks, subject breakdowns, and weekly trend charts.</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">Admin dashboard</h3>
+                        <p class="mb-0">Admins can review platform totals, user activity, and weekly registrations from the protected <code>/admin</code> page.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section id="rest-api" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">5. REST API guide</h2>
+            <p>
+                The REST API uses the same session cookie as the web app. Log in through the browser or with
+                <code>curl</code>, save the cookie jar, and send JSON requests to <code>/api/v1</code>.
+            </p>
+
+            <h3 class="h5 mt-4">Authentication flow</h3>
+            <div class="help-code-block mb-3"><code>curl -i -c cookies.txt \
+  -X POST http://127.0.0.1:5000/auth/login \
+  -d "email=you@example.com" \
+  -d "password=your-password"
+
+curl -b cookies.txt http://127.0.0.1:5000/api/v1/auth/status</code></div>
+
+            <h3 class="h5">Create a course and generate a study plan</h3>
+            <div class="help-code-block mb-4"><code>curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Calculus","difficulty_level":4}' \
+  http://127.0.0.1:5000/api/v1/courses
+
+curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"course_id":1,"due_date":"2026-04-25","task_type":"Exam"}' \
+  http://127.0.0.1:5000/api/v1/deadlines
+
+curl -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  http://127.0.0.1:5000/api/v1/study-plan/generate</code></div>
+
+            <h3 class="h5">Available endpoints</h3>
+            <div class="table-responsive">
+                <table class="table align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Method</th>
+                            <th>Path</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for endpoint in api_endpoints %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-primary help-endpoint-method">{{ endpoint.method }}</span>
+                            </td>
+                            <td><code>{{ endpoint.path }}</code></td>
+                            <td>{{ endpoint.description }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="h5 mt-4">Common API responses</h3>
+            <ul class="mb-0">
+                <li><code>401</code>: returned as JSON when the request is not authenticated.</li>
+                <li><code>404</code>: returned when the requested course, deadline, or study session does not exist in the current user scope.</li>
+                <li><code>415</code>: returned when a write request is missing a JSON body or the correct content type.</li>
+            </ul>
+        </div>
+    </div>
+</section>
+{% endblock %}

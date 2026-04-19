@@ -1,7 +1,7 @@
-# Automated Study Planner - Flask Web App (Chunk 1-9)
+# Automated Study Planner - Flask Web App (Chunk 1-10)
 
 ## Overview
-A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, an admin dashboard, and session-authenticated REST API support.
+A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, an admin dashboard, session-authenticated REST API support, and an in-app help guide.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -22,6 +22,7 @@ A comprehensive study planner application with both CLI and web interfaces. Feat
 - ✅ **Progress Tracking & Analytics Dashboard** - Completion rate, study streak, per-subject breakdowns, weekly trend charts (NEW in Chunk 7)
 - ✅ **Admin Dashboard** - Platform-wide overview and user activity monitoring protected by `ADMIN_EMAILS` (NEW in Chunk 8)
 - ✅ **REST API Support** - Session-authenticated JSON endpoints for courses, deadlines, study sessions, and study plan generation (NEW in Chunk 9)
+- ✅ **In-App Help Guide** - Public help page with app instructions, admin access notes, and REST API endpoint reference (NEW in Chunk 10)
 
 ## Setup
 
@@ -76,6 +77,12 @@ Run the Flask web app:
 python web_app.py
 ```
 Then open your browser to: **http://127.0.0.1:5000**
+
+The in-app help page is available at:
+
+```text
+http://127.0.0.1:5000/help
+```
 
 To run notification delivery outside the web process:
 ```bash
@@ -154,6 +161,7 @@ curl -b cookies.txt \
 - **Notification Settings** - Configure morning summary time and optional `ntfy` topic
 - **Analytics Dashboard** - Completion rate, study hours, day streak, sessions by subject, weekly trend charts, upcoming deadlines
 - **Admin Dashboard** - Platform totals, recent registration trends, and per-user activity for approved admin accounts
+- **Help Page** - Public in-app guide for feature walkthroughs, guest/account behavior, admin access, and REST API usage
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -318,7 +326,7 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 10+)
+## Future Improvements (Chunks 11+)
 - Advanced scheduling algorithms (ML-based optimization)
 - Calendar integration (Google Calendar, Outlook)
 - Mobile responsive enhancements
@@ -346,7 +354,8 @@ automated_study_planner/
 │   ├── notifications.html # Notification queue
 │   ├── notification_settings.html # Notification config
 │   ├── analytics.html   # Progress & analytics dashboard (NEW in Chunk 7)
-│   └── admin.html       # Platform admin dashboard (NEW in Chunk 8)
+│   ├── admin.html       # Platform admin dashboard (NEW in Chunk 8)
+│   └── help.html        # Public help and API guide (NEW in Chunk 10)
 ├── static/              # Static assets
 │   └── css/
 │       └── style.css    # Custom styling
@@ -365,6 +374,7 @@ automated_study_planner/
 - **Chunk 7**: Progress tracking & analytics dashboard (completion rate, study streak, Chart.js visualizations)
 - **Chunk 8**: Admin dashboard with `ADMIN_EMAILS` access control
 - **Chunk 9**: Session-authenticated REST API for core planner resources
+- **Chunk 10**: Public in-app help guide with app usage and API documentation
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
@@ -374,4 +384,4 @@ automated_study_planner/
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 0.9.0 (Chunk 9 - REST API Support)
+**Version**: 1.0.0 (Chunk 10 - In-App Help Guide)
