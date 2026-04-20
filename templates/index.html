@@ -94,6 +94,89 @@
 </div>
 {% endif %}
 
+{% if current_user.is_authenticated %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-primary">
+            <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center">
+                <h2 class="h4 mb-0">AI Study Insights</h2>
+                <form method="POST" action="{{ url_for('generate_ai_insights') }}">
+                    <button type="submit" class="btn btn-sm btn-primary" {% if not ai_enabled or not ai_ready %}disabled{% endif %}>
+                        Generate Insights
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Advisory only. Your study plan still comes from the built-in planner logic.
+                    {% if ai_enabled %}
+                    Using Ollama model <code>{{ ai_model }}</code>.
+                    {% endif %}
+                </p>
+
+                {% if not ai_enabled %}
+                <div class="alert alert-secondary mb-0">
+                    AI insights are off. Set <code>AI_INSIGHTS_ENABLED=1</code> and configure Ollama to enable this panel.
+                </div>
+                {% elif not ai_ready %}
+                <div class="alert alert-info mb-0">
+                    Add courses and deadlines, generate a study plan, then come back here for AI-generated priorities and tips.
+                </div>
+                {% else %}
+                    {% if ai_error %}
+                    <div class="alert alert-danger">
+                        {{ ai_error }}
+                    </div>
+                    {% endif %}
+
+                    {% if ai_insights %}
+                    <div class="row g-3">
+                        <div class="col-lg-6">
+                            <div class="ai-insight-card border rounded p-3 h-100">
+                                <h3 class="h5">Snapshot Summary</h3>
+                                <p class="mb-2">{{ ai_insights.summary }}</p>
+                                <div class="text-muted small">Generated at {{ ai_insights.generated_at }}</div>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="ai-insight-card border rounded p-3 h-100">
+                                <h3 class="h5">Deadline Risk</h3>
+                                <p class="mb-0">{{ ai_insights.deadline_risk }}</p>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="ai-insight-card border rounded p-3 h-100">
+                                <h3 class="h5">Weekly Priorities</h3>
+                                <ul class="mb-0">
+                                    {% for item in ai_insights.weekly_priorities %}
+                                    <li>{{ item }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                        <div class="col-lg-6">
+                            <div class="ai-insight-card border rounded p-3 h-100">
+                                <h3 class="h5">Study Tips</h3>
+                                <ul class="mb-0">
+                                    {% for item in ai_insights.study_tips %}
+                                    <li>{{ item }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-light border mb-0">
+                        Click <strong>Generate Insights</strong> to get AI-generated deadline risk notes, weekly priorities, and study tips for your current plan.
+                    </div>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Upcoming Study Sessions -->
 <div class="row mb-4">
     <div class="col-md-12">

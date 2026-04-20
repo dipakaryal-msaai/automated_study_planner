@@ -14,6 +14,7 @@ from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
 from flask import Flask, render_template, request, redirect, url_for, flash, session, jsonify
 from flask_login import LoginManager, login_user, logout_user, login_required, current_user
 from datetime import datetime, timedelta
+from ai_service import AIInsightsService
 from database import DatabaseManager, UserModel
 from models import Course, Deadline, StudySession
 
@@ -31,6 +32,7 @@ login_manager.login_message_category = 'info'
 
 # Initialize database manager
 db = DatabaseManager()
+ai_insights_service = AIInsightsService()
 NOTIFICATION_POLL_INTERVAL_SECONDS = int(os.getenv('NOTIFICATION_POLL_INTERVAL_SECONDS', '60'))
 _scheduler_stop_event = Event()
 _scheduler_started = False
@@ -103,6 +105,12 @@ def _next_guest_id(counter_key: str) -> int:
 def is_guest_session_active() -> bool:
     """Return True only when the visitor explicitly entered guest mode."""
     return bool(session.get('guest_mode')) and not current_user.is_authenticated
+
+
+def clear_ai_insights_cache() -> None:
+    """Clear any cached dashboard AI insights for the current browser session."""
+    session.pop('ai_dashboard_insights', None)
+    session.pop('ai_dashboard_error', None)
 
 
 # ---------------------------------------------------------------------------
@@ -279,6 +287,57 @@ def api_error(message, status_code, errors=None):
     return jsonify(payload), status_code
 
 
+def build_ai_insights_context(courses, deadlines, study_plans) -> dict:
+    """Build a compact planner snapshot for the advisory AI service."""
+    today = datetime.now().date()
+    sorted_deadlines = []
+    for deadline in deadlines.values():
+        course = courses.get(deadline.course_id)
+        if not course:
+            continue
+        try:
+            due_date = datetime.strptime(deadline.due_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        sorted_deadlines.append({
+            'course': course.name,
+            'task_type': deadline.task_type,
+            'due_date': deadline.due_date,
+            'days_left': (due_date - today).days,
+            'difficulty': course.difficulty_level,
+        })
+    sorted_deadlines.sort(key=lambda item: item['days_left'])
+
+    upcoming_sessions = [
+        {
+            'date': session_item.date,
+            'subject': session_item.subject,
+            'task_type': session_item.task_type,
+            'duration': session_item.duration,
+            'difficulty': session_item.difficulty,
+            'completion_status': session_item.completion_status,
+        }
+        for session_item in study_plans[:10]
+    ]
+
+    completed_sessions = sum(1 for session_item in study_plans if session_item.completion_status)
+    completion_rate = round(completed_sessions / len(study_plans) * 100) if study_plans else 0
+
+    return {
+        'course_count': len(courses),
+        'deadline_count': len(deadlines),
+        'study_session_count': len(study_plans),
+        'completion_rate': completion_rate,
+        'upcoming_deadlines': sorted_deadlines[:8],
+        'upcoming_study_sessions': upcoming_sessions,
+    }
+
+
+def load_ai_dashboard_state():
+    """Read cached AI dashboard state from the browser session."""
+    return session.get('ai_dashboard_insights'), session.pop('ai_dashboard_error', None)
+
+
 def get_api_payload():
     """Parse a JSON object request body for REST API routes."""
     if not request.is_json:
@@ -420,6 +479,7 @@ def api_courses():
         added_date=datetime.now().strftime("%Y-%m-%d"),
         user_id=current_user.id,
     )
+    clear_ai_insights_cache()
     return jsonify({
         'message': 'Course created.',
         'course': serialize_api_course(course),
@@ -439,6 +499,7 @@ def api_course_detail(course_id):
 
     if request.method == 'DELETE':
         db.delete_course(course_id, user_id=current_user.id)
+        clear_ai_insights_cache()
         return jsonify({'message': 'Course deleted.'})
 
     payload, error_response = get_api_payload()
@@ -469,6 +530,7 @@ def api_course_detail(course_id):
         difficulty_level=difficulty,
         user_id=current_user.id,
     )
+    clear_ai_insights_cache()
     updated_course = db.get_course(course_id, user_id=current_user.id)
     return jsonify({
         'message': 'Course updated.',
@@ -520,6 +582,7 @@ def api_deadlines():
     if deadline is None:
         return api_error('Course not found.', 404)
 
+    clear_ai_insights_cache()
     return jsonify({
         'message': 'Deadline created.',
         'deadline': serialize_api_deadline(deadline, courses),
@@ -540,6 +603,7 @@ def api_deadline_detail(deadline_id):
 
     if request.method == 'DELETE':
         db.delete_deadline(deadline_id, user_id=current_user.id)
+        clear_ai_insights_cache()
         return jsonify({'message': 'Deadline deleted.'})
 
     payload, error_response = get_api_payload()
@@ -579,6 +643,7 @@ def api_deadline_detail(deadline_id):
         course_id=new_course_id,
         user_id=current_user.id,
     )
+    clear_ai_insights_cache()
     updated_deadline = db.get_deadline(deadline_id, user_id=current_user.id)
     updated_courses = db.get_all_courses(user_id=current_user.id)
     return jsonify({
@@ -622,6 +687,7 @@ def api_study_session_detail(session_id):
         payload['completion_status'],
         user_id=current_user.id,
     )
+    clear_ai_insights_cache()
     updated_session = db.get_study_session(session_id, user_id=current_user.id)
     return jsonify({
         'message': 'Study session updated.',
@@ -654,6 +720,7 @@ def api_generate_study_plan():
 
     study_plans = generate_study_plan_logic(courses, deadlines, start_date_str=start_date_str)
     save_study_plans(study_plans)
+    clear_ai_insights_cache()
     saved_study_sessions = db.get_all_study_sessions(user_id=current_user.id)
     generated_count = len(study_plans)
 
@@ -764,6 +831,47 @@ def generate_study_plan_logic(courses, deadlines, start_date_str=None):
     return study_plans
 
 
+def render_dashboard(courses, deadlines, study_plans):
+    """Render the main dashboard with shared computed context."""
+    pending_notifications = []
+    failed_notifications = []
+    daily_summary_time = '08:00'
+    ai_insights = None
+    ai_error = None
+    ai_enabled = AIInsightsService.is_enabled()
+    ai_ready = False
+
+    if current_user.is_authenticated:
+        daily_summary_time = get_daily_summary_time(current_user.id)
+        pending_notifications = serialize_notifications(current_user.id, status='pending', limit=5)
+        failed_notifications = serialize_notifications(current_user.id, status='failed', limit=5)
+        ai_insights, ai_error = load_ai_dashboard_state()
+        ai_ready = bool(courses and deadlines and study_plans)
+
+    for i, plan in enumerate(study_plans):
+        plan.color = get_deadline_color(plan.date, plan.completion_status)
+        plan.original_index = i
+
+    upcoming_plans = [p for p in study_plans if not p.completion_status]
+    completed_plans = [p for p in study_plans if p.completion_status]
+
+    return render_template(
+        'index.html',
+        upcoming_plans=upcoming_plans,
+        completed_plans=completed_plans,
+        courses=courses,
+        deadlines=deadlines,
+        pending_notifications=pending_notifications,
+        failed_notifications=failed_notifications,
+        daily_summary_time=daily_summary_time,
+        ai_enabled=ai_enabled,
+        ai_ready=ai_ready,
+        ai_insights=ai_insights,
+        ai_error=ai_error,
+        ai_model=ai_insights_service.model,
+    )
+
+
 def distribute_sessions(start_date, end_date, num_sessions):
     """Distribute study sessions evenly between start and end dates."""
     sessions = []
@@ -851,6 +959,7 @@ def auth_login():
 
 @app.route('/auth/logout')
 def auth_logout():
+    clear_ai_insights_cache()
     logout_user()
     # Clear guest data too
     for key in ['guest_courses', 'guest_deadlines', 'guest_study_plans',
@@ -972,34 +1081,7 @@ def help_page():
 def index():
     """Dashboard - Display study plan overview."""
     courses, deadlines, study_plans = load_data()
-    pending_notifications = []
-    failed_notifications = []
-    daily_summary_time = '08:00'
-
-    if current_user.is_authenticated:
-        daily_summary_time = get_daily_summary_time(current_user.id)
-        pending_notifications = serialize_notifications(current_user.id, status='pending', limit=5)
-        failed_notifications = serialize_notifications(current_user.id, status='failed', limit=5)
-    
-    # Add color coding and original index to study plans
-    for i, plan in enumerate(study_plans):
-        plan.color = get_deadline_color(plan.date, plan.completion_status)
-        plan.original_index = i  # Store the original index in full list
-    
-    # Separate plans into upcoming and completed
-    upcoming_plans = [p for p in study_plans if not p.completion_status]
-    completed_plans = [p for p in study_plans if p.completion_status]
-    
-    return render_template(
-        'index.html',
-        upcoming_plans=upcoming_plans,
-        completed_plans=completed_plans,
-        courses=courses,
-        deadlines=deadlines,
-        pending_notifications=pending_notifications,
-        failed_notifications=failed_notifications,
-        daily_summary_time=daily_summary_time
-    )
+    return render_dashboard(courses, deadlines, study_plans)
 
 
 @app.route('/courses')
@@ -1036,6 +1118,7 @@ def add_course():
                 added_date=datetime.now().strftime("%Y-%m-%d"),
                 user_id=current_user.id
             )
+            clear_ai_insights_cache()
         else:
             _guest_warn()
             new_id = _next_guest_id(GUEST_COURSE_CTR)
@@ -1127,6 +1210,7 @@ def add_deadline():
                 user_id=current_user.id
             )
             if deadline:
+                clear_ai_insights_cache()
                 flash(f'Deadline added for {courses[course_id].name}!', 'success')
             else:
                 flash('Failed to add deadline.', 'danger')
@@ -1157,6 +1241,8 @@ def generate_plan():
 
     study_plans = generate_study_plan_logic(courses, deadlines)
     save_study_plans(study_plans)
+    if current_user.is_authenticated:
+        clear_ai_insights_cache()
 
     if current_user.is_authenticated:
         notification_topic = db.get_scope_setting('notification_topic', user_id=current_user.id)
@@ -1170,11 +1256,41 @@ def generate_plan():
     return redirect(url_for('index'))
 
 
+@app.route('/ai/insights/generate', methods=['POST'])
+@login_required
+def generate_ai_insights():
+    """Generate advisory dashboard insights using the optional Ollama backend."""
+    clear_ai_insights_cache()
+
+    if not AIInsightsService.is_enabled():
+        session['ai_dashboard_error'] = (
+            'AI insights are disabled. Set AI_INSIGHTS_ENABLED=1 to enable the dashboard assistant.'
+        )
+        return redirect(url_for('index'))
+
+    courses, deadlines, study_plans = load_data()
+    if not (courses and deadlines and study_plans):
+        session['ai_dashboard_error'] = (
+            'Add courses and deadlines, generate a study plan, then request AI insights.'
+        )
+        return redirect(url_for('index'))
+
+    context = build_ai_insights_context(courses, deadlines, study_plans)
+    try:
+        session['ai_dashboard_insights'] = ai_insights_service.generate_insights(context)
+    except RuntimeError as exc:
+        session['ai_dashboard_error'] = str(exc)
+
+    return redirect(url_for('index'))
+
+
 @app.route('/study-plan/complete/<int:session_index>', methods=['POST'])
 def complete_session(session_index):
     """Mark a study session as complete."""
     if current_user.is_authenticated:
         success = db.update_study_session_status(session_index, True, user_id=current_user.id)
+        if success:
+            clear_ai_insights_cache()
     else:
         plans = _guest_study_plans()
         if 0 <= session_index < len(plans):
@@ -1198,6 +1314,8 @@ def uncomplete_session(session_index):
     """Mark a study session as incomplete."""
     if current_user.is_authenticated:
         success = db.update_study_session_status(session_index, False, user_id=current_user.id)
+        if success:
+            clear_ai_insights_cache()
     else:
         plans = _guest_study_plans()
         if 0 <= session_index < len(plans):
@@ -1246,6 +1364,8 @@ def edit_deadline(deadline_id):
                 task_type=task_type,
                 user_id=current_user.id,
             )
+            if success:
+                clear_ai_insights_cache()
         else:
             _guest_warn()
             raw = _guest_deadlines()
@@ -1285,6 +1405,8 @@ def delete_deadline(deadline_id):
 
         if current_user.is_authenticated:
             success = db.delete_deadline(deadline_id, user_id=current_user.id)
+            if success:
+                clear_ai_insights_cache()
         else:
             _guest_warn()
             raw = _guest_deadlines()

@@ -8,7 +8,7 @@
         <h1 class="display-5">Help and User Guide</h1>
         <p class="lead text-muted">
             Learn how to use the study planner, understand guest versus account behavior,
-            and explore the REST API added in chunk 9.
+            explore the REST API, and enable optional AI study insights with Ollama.
         </p>
     </div>
     <div class="col-lg-4">
@@ -19,8 +19,9 @@
                     <a class="list-group-item list-group-item-action" href="#getting-started">Getting started</a>
                     <a class="list-group-item list-group-item-action" href="#core-workflow">Core workflow</a>
                     <a class="list-group-item list-group-item-action" href="#accounts-and-guest-mode">Accounts and guest mode</a>
-                    <a class="list-group-item list-group-item-action" href="#extra-features">Notifications, analytics, and admin</a>
+                    <a class="list-group-item list-group-item-action" href="#extra-features">Notifications, analytics, AI, and admin</a>
                     <a class="list-group-item list-group-item-action" href="#rest-api">REST API guide</a>
+                    <a class="list-group-item list-group-item-action" href="#ai-setup">Optional AI setup</a>
                 </div>
             </div>
         </div>
@@ -103,6 +104,9 @@
                     </tbody>
                 </table>
             </div>
+            <p class="mb-0 text-muted small">
+                Guest users can still explore the app, but the AI dashboard panel is shown only for logged-in accounts.
+            </p>
         </div>
     </div>
 </section>
@@ -110,21 +114,27 @@
 <section id="extra-features" class="help-section mb-4">
     <div class="card">
         <div class="card-body">
-            <h2 class="h3">4. Notifications, analytics, and admin</h2>
+            <h2 class="h3">4. Notifications, analytics, AI, and admin</h2>
             <div class="row g-3">
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="border rounded p-3 h-100">
                         <h3 class="h5">Notifications</h3>
                         <p class="mb-0">Authenticated users can configure daily reminder time, email delivery, and an optional <code>ntfy</code> topic under Settings.</p>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
                     <div class="border rounded p-3 h-100">
                         <h3 class="h5">Analytics</h3>
                         <p class="mb-0">The Analytics page shows completion rate, total study hours, streaks, subject breakdowns, and weekly trend charts.</p>
                     </div>
                 </div>
-                <div class="col-md-4">
+                <div class="col-md-3">
+                    <div class="border rounded p-3 h-100">
+                        <h3 class="h5">AI insights</h3>
+                        <p class="mb-0">Logged-in users can optionally generate AI advice on the dashboard for deadline risk, weekly priorities, and study tips using a local Ollama model.</p>
+                    </div>
+                </div>
+                <div class="col-md-3">
                     <div class="border rounded p-3 h-100">
                         <h3 class="h5">Admin dashboard</h3>
                         <p class="mb-0">Admins can review platform totals, user activity, and weekly registrations from the protected <code>/admin</code> page.</p>
@@ -198,6 +208,23 @@ curl -b cookies.txt \
                 <li><code>404</code>: returned when the requested course, deadline, or study session does not exist in the current user scope.</li>
                 <li><code>415</code>: returned when a write request is missing a JSON body or the correct content type.</li>
             </ul>
+        </div>
+    </div>
+</section>
+
+<section id="ai-setup" class="help-section mb-4">
+    <div class="card">
+        <div class="card-body">
+            <h2 class="h3">6. Optional AI setup</h2>
+            <p>AI insights are advisory and optional. The built-in planner still generates the study schedule.</p>
+            <p class="mb-2 text-muted small">If you are using a <code>.env</code> file, use plain <code>KEY=VALUE</code> lines like this:</p>
+            <div class="help-code-block mb-3"><code>AI_INSIGHTS_ENABLED=1
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2</code></div>
+            <p class="mb-2 text-muted small">Then run Ollama separately in your terminal, for example:</p>
+            <div class="help-code-block"><code>
+ollama serve
+ollama pull llama3.2</code></div>
         </div>
     </div>
 </section>

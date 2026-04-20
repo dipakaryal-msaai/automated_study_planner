@@ -198,3 +198,7 @@ body {
     text-align: center;
     font-weight: 700;
 }
+
+.ai-insight-card {
+    background: linear-gradient(180deg, rgba(13, 110, 253, 0.04), rgba(13, 110, 253, 0.01));
+}

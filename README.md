@@ -1,7 +1,7 @@
-# Automated Study Planner - Flask Web App (Chunk 1-10)
+# Automated Study Planner - Flask Web App (Chunk 1-11)
 
 ## Overview
-A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, an admin dashboard, session-authenticated REST API support, and an in-app help guide.
+A comprehensive study planner application with both CLI and web interfaces. Features persistent SQLite/PostgreSQL database storage, deadline tracking, intelligent study plan generation, authentication, analytics, daily reminders, an admin dashboard, session-authenticated REST API support, an in-app help guide, and optional AI study insights backed by local Ollama.
 
 ## Features
 - ✅ Add courses with difficulty levels (1-5)
@@ -23,6 +23,7 @@ A comprehensive study planner application with both CLI and web interfaces. Feat
 - ✅ **Admin Dashboard** - Platform-wide overview and user activity monitoring protected by `ADMIN_EMAILS` (NEW in Chunk 8)
 - ✅ **REST API Support** - Session-authenticated JSON endpoints for courses, deadlines, study sessions, and study plan generation (NEW in Chunk 9)
 - ✅ **In-App Help Guide** - Public help page with app instructions, admin access notes, and REST API endpoint reference (NEW in Chunk 10)
+- ✅ **AI Study Insights** - Optional dashboard insights for deadline risk, weekly priorities, and study tips via local Ollama (NEW in Chunk 11)
 
 ## Setup
 
@@ -110,6 +111,29 @@ The app exposes JSON endpoints under `/api/v1` for authenticated users. The API 
 
 Write endpoints expect `Content-Type: application/json` and return JSON errors instead of HTML redirects.
 
+### AI Study Insights
+
+Chunk 11 adds an optional AI panel to the dashboard for logged-in users. It does **not** replace the planner algorithm. Instead, it reads the existing planner state and generates advisory insights:
+
+- deadline risk summary
+- weekly priorities
+- study tips
+
+The feature uses a local Ollama model and stays disabled unless explicitly enabled.
+
+```bash
+AI_INSIGHTS_ENABLED=1
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+```
+
+Add those lines to your local `.env` file, then run Ollama separately:
+
+```bash
+ollama serve
+ollama pull llama3.2
+```
+
 #### Core Endpoints
 
 | Method | Path | Purpose |
@@ -162,6 +186,7 @@ curl -b cookies.txt \
 - **Analytics Dashboard** - Completion rate, study hours, day streak, sessions by subject, weekly trend charts, upcoming deadlines
 - **Admin Dashboard** - Platform totals, recent registration trends, and per-user activity for approved admin accounts
 - **Help Page** - Public in-app guide for feature walkthroughs, guest/account behavior, admin access, and REST API usage
+- **AI Insights Panel** - Optional dashboard assistant for risk summary, weekly priorities, and study tips
 
 ### CLI Menu Options (main.py)
 1. **Add Course** - Input course name and difficulty level (1-5)
@@ -326,7 +351,7 @@ Legacy JSON files in `data/` directory:
 
 **Migration**: Use `migrate_json_to_db.py` to convert JSON files to SQLite database.
 
-## Future Improvements (Chunks 11+)
+## Future Improvements (Chunks 12+)
 - Advanced scheduling algorithms (ML-based optimization)
 - Calendar integration (Google Calendar, Outlook)
 - Mobile responsive enhancements
@@ -336,6 +361,7 @@ Legacy JSON files in `data/` directory:
 automated_study_planner/
 ├── web_app.py           # Flask web application (Chunk 3)
 ├── notification_worker.py # Standalone daily notification worker (Chunk 6)
+├── ai_service.py         # Optional Ollama-backed AI insights service (NEW in Chunk 11)
 ├── main.py              # CLI application (original interface)
 ├── models.py            # Data classes (Course, Deadline, StudySession)
 ├── database.py          # SQLAlchemy ORM and DatabaseManager (NEW in Chunk 4)
@@ -375,6 +401,7 @@ automated_study_planner/
 - **Chunk 8**: Admin dashboard with `ADMIN_EMAILS` access control
 - **Chunk 9**: Session-authenticated REST API for core planner resources
 - **Chunk 10**: Public in-app help guide with app usage and API documentation
+- **Chunk 11**: Optional AI dashboard insights using a local Ollama model
 
 ## Technologies Used
 - **Backend**: Python 3.7+, Flask 3.0.0, SQLAlchemy 2.0.25, Flask-Login 0.6.3
@@ -384,4 +411,4 @@ automated_study_planner/
 - **ORM**: SQLAlchemy with declarative models
 
 ---
-**Version**: 1.0.0 (Chunk 10 - In-App Help Guide)
+**Version**: 1.1.0 (Chunk 11 - AI Study Insights)

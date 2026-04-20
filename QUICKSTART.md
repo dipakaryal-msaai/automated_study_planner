@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 10)
+# Quick Start Guide - Flask Web App (Updated for Chunk 11)
 
 ## First-Time Setup
 
@@ -35,6 +35,9 @@ This converts your JSON files to SQLite database. Your original files are backed
 
 4. **Optional: use the REST API**
    The app now exposes authenticated JSON endpoints under `/api/v1`.
+
+5. **Optional: enable AI study insights**
+   The dashboard can generate advisory AI insights for logged-in users when Ollama is running locally.
 
 ## Using the Web Interface
 
@@ -103,6 +106,25 @@ curl -b cookies.txt \
 ```
 
 The in-app Help page also includes the endpoint list and sample API requests.
+
+### AI Study Insights
+
+To enable the optional AI panel on the dashboard:
+
+```bash
+AI_INSIGHTS_ENABLED=1
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=llama3.2
+```
+
+Add those lines to your local `.env`, then run:
+
+```bash
+ollama serve
+ollama pull llama3.2
+```
+
+Then log in, open the dashboard, and click **Generate Insights**.
 
 ## Features at a Glance
 
