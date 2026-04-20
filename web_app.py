@@ -333,6 +333,149 @@ def build_ai_insights_context(courses, deadlines, study_plans) -> dict:
     }
 
 
+def build_ai_optimization_context(courses, deadlines, study_plans) -> dict:
+    """Build an optimizer snapshot for pending sessions only."""
+    today = datetime.now().date()
+    pending_sessions = [plan for plan in study_plans if not plan.completion_status]
+    deadline_windows = {}
+    upcoming_deadlines = []
+
+    for deadline in deadlines.values():
+        course = courses.get(deadline.course_id)
+        if not course:
+            continue
+        try:
+            due_date = datetime.strptime(deadline.due_date, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        key = f'{course.name}::{deadline.task_type}'
+        existing_due = deadline_windows.get(key)
+        due_date_str = due_date.strftime('%Y-%m-%d')
+        if existing_due is None or due_date_str > existing_due:
+            deadline_windows[key] = due_date_str
+
+        upcoming_deadlines.append({
+            'subject': course.name,
+            'task_type': deadline.task_type,
+            'due_date': due_date_str,
+            'days_left': (due_date - today).days,
+            'difficulty': course.difficulty_level,
+        })
+
+    base_total_minutes = sum(plan.duration for plan in pending_sessions)
+    min_total = max(30, int(base_total_minutes * 0.8))
+    max_total = max(min_total, int(base_total_minutes * 1.2))
+
+    return {
+        'today': today.strftime('%Y-%m-%d'),
+        'base_total_minutes': base_total_minutes,
+        'min_total_minutes': min_total,
+        'max_total_minutes': max_total,
+        'pending_session_count': len(pending_sessions),
+        'pending_sessions': [
+            {
+                'date': plan.date,
+                'start_time': plan.start_time,
+                'subject': plan.subject,
+                'task_type': plan.task_type,
+                'duration': plan.duration,
+                'difficulty': plan.difficulty,
+            }
+            for plan in pending_sessions
+        ],
+        'deadline_windows': deadline_windows,
+        'upcoming_deadlines': sorted(upcoming_deadlines, key=lambda item: item['due_date'])[:12],
+    }
+
+
+def validate_ai_optimized_schedule(optimized_payload, courses, deadlines, study_plans):
+    """Validate an AI-optimized pending schedule and convert it to dataclasses."""
+    pending_sessions = [plan for plan in study_plans if not plan.completion_status]
+    if not pending_sessions:
+        raise RuntimeError('There are no pending sessions available to optimize.')
+
+    today = datetime.now().date()
+    course_names = {course.name for course in courses.values()}
+    valid_pairs = set()
+    latest_due_by_pair = {}
+
+    for deadline in deadlines.values():
+        course = courses.get(deadline.course_id)
+        if not course:
+            continue
+        pair = (course.name, deadline.task_type)
+        valid_pairs.add(pair)
+        latest_due = latest_due_by_pair.get(pair)
+        if latest_due is None or deadline.due_date > latest_due:
+            latest_due_by_pair[pair] = deadline.due_date
+
+    base_total = sum(plan.duration for plan in pending_sessions)
+    min_total = max(30, int(base_total * 0.8))
+    max_total = max(min_total, int(base_total * 1.2))
+
+    optimized_sessions = []
+    total_minutes = 0
+    for item in optimized_payload['study_sessions']:
+        subject = item.get('subject', '')
+        task_type = item.get('task_type', '')
+        pair = (subject, task_type)
+        if subject not in course_names:
+            raise RuntimeError(f'AI optimizer returned unknown subject "{subject}".')
+        if pair not in valid_pairs:
+            raise RuntimeError(f'AI optimizer returned an invalid subject/task combination for "{subject}".')
+
+        try:
+            session_date = datetime.strptime(item.get('date', ''), "%Y-%m-%d").date()
+        except ValueError as exc:
+            raise RuntimeError('AI optimizer returned an invalid session date.') from exc
+        if session_date < today:
+            raise RuntimeError('AI optimizer scheduled a session in the past.')
+
+        latest_due = datetime.strptime(latest_due_by_pair[pair], "%Y-%m-%d").date()
+        if session_date > latest_due:
+            raise RuntimeError(f'AI optimizer scheduled "{subject}" after its due date.')
+
+        start_time = item.get('start_time', '18:00') or '18:00'
+        try:
+            datetime.strptime(start_time, "%H:%M")
+        except ValueError as exc:
+            raise RuntimeError('AI optimizer returned an invalid start time.') from exc
+
+        try:
+            duration = int(item.get('duration'))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError('AI optimizer returned an invalid duration.') from exc
+        if duration < 15 or duration > 360:
+            raise RuntimeError('AI optimizer returned a duration outside the allowed range.')
+
+        try:
+            difficulty = int(item.get('difficulty'))
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError('AI optimizer returned an invalid difficulty level.') from exc
+        if difficulty < 1 or difficulty > 5:
+            raise RuntimeError('AI optimizer returned a difficulty outside the allowed range.')
+
+        optimized_sessions.append(StudySession(
+            date=session_date.strftime("%Y-%m-%d"),
+            start_time=start_time,
+            subject=subject,
+            task_type=task_type,
+            duration=duration,
+            difficulty=difficulty,
+            completion_status=False,
+        ))
+        total_minutes += duration
+
+    if total_minutes < min_total or total_minutes > max_total:
+        raise RuntimeError(
+            f'AI optimizer changed total planned time outside the allowed range ({min_total}-{max_total} minutes).'
+        )
+
+    optimized_sessions.sort(key=lambda session_item: (session_item.date, session_item.start_time, session_item.subject))
+    return optimized_sessions
+
+
 def load_ai_dashboard_state():
     """Read cached AI dashboard state from the browser session."""
     return session.get('ai_dashboard_insights'), session.pop('ai_dashboard_error', None)
@@ -840,6 +983,7 @@ def render_dashboard(courses, deadlines, study_plans):
     ai_error = None
     ai_enabled = AIInsightsService.is_enabled()
     ai_ready = False
+    ai_opt_ready = False
 
     if current_user.is_authenticated:
         daily_summary_time = get_daily_summary_time(current_user.id)
@@ -854,6 +998,7 @@ def render_dashboard(courses, deadlines, study_plans):
 
     upcoming_plans = [p for p in study_plans if not p.completion_status]
     completed_plans = [p for p in study_plans if p.completion_status]
+    ai_opt_ready = bool(courses and deadlines and upcoming_plans)
 
     return render_template(
         'index.html',
@@ -866,6 +1011,7 @@ def render_dashboard(courses, deadlines, study_plans):
         daily_summary_time=daily_summary_time,
         ai_enabled=ai_enabled,
         ai_ready=ai_ready,
+        ai_opt_ready=ai_opt_ready,
         ai_insights=ai_insights,
         ai_error=ai_error,
         ai_model=ai_insights_service.model,
@@ -1281,6 +1427,44 @@ def generate_ai_insights():
     except RuntimeError as exc:
         session['ai_dashboard_error'] = str(exc)
 
+    return redirect(url_for('index'))
+
+
+@app.route('/ai/schedule/optimize', methods=['POST'])
+@login_required
+def optimize_ai_schedule():
+    """Optimize the pending study schedule with AI, then persist it if valid."""
+    if not AIInsightsService.is_enabled():
+        flash('AI schedule optimization is disabled. Set AI_INSIGHTS_ENABLED=1 to enable it.', 'danger')
+        return redirect(url_for('index'))
+
+    courses, deadlines, study_plans = load_data()
+    pending_sessions = [plan for plan in study_plans if not plan.completion_status]
+    if not (courses and deadlines and pending_sessions):
+        flash('Generate a study plan with pending sessions before running AI optimization.', 'warning')
+        return redirect(url_for('index'))
+
+    optimization_context = build_ai_optimization_context(courses, deadlines, study_plans)
+
+    try:
+        optimized_payload = ai_insights_service.optimize_schedule(optimization_context)
+        optimized_sessions = validate_ai_optimized_schedule(
+            optimized_payload,
+            courses,
+            deadlines,
+            study_plans,
+        )
+    except RuntimeError as exc:
+        flash(f'AI schedule optimization failed: {exc}', 'danger')
+        return redirect(url_for('index'))
+
+    save_study_plans(optimized_sessions)
+    clear_ai_insights_cache()
+    summary = optimized_payload.get('summary', '').strip()
+    if summary:
+        flash(f'AI schedule optimization applied. {summary}', 'success')
+    else:
+        flash('AI schedule optimization applied.', 'success')
     return redirect(url_for('index'))
 
 

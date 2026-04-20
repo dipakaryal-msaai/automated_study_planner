@@ -8,7 +8,7 @@
         <h1 class="display-5">Help and User Guide</h1>
         <p class="lead text-muted">
             Learn how to use the study planner, understand guest versus account behavior,
-            explore the REST API, and enable optional AI study insights with Ollama.
+            explore the REST API, and enable optional AI study insights and schedule optimization with Ollama.
         </p>
     </div>
     <div class="col-lg-4">
@@ -131,7 +131,7 @@
                 <div class="col-md-3">
                     <div class="border rounded p-3 h-100">
                         <h3 class="h5">AI insights</h3>
-                        <p class="mb-0">Logged-in users can optionally generate AI advice on the dashboard for deadline risk, weekly priorities, and study tips using a local Ollama model.</p>
+                        <p class="mb-0">Logged-in users can optionally generate AI advice on the dashboard for deadline risk, weekly priorities, and study tips, and they can ask AI to optimize the pending schedule within built-in guardrails.</p>
                     </div>
                 </div>
                 <div class="col-md-3">
@@ -216,7 +216,7 @@ curl -b cookies.txt \
     <div class="card">
         <div class="card-body">
             <h2 class="h3">6. Optional AI setup</h2>
-            <p>AI insights are advisory and optional. The built-in planner still generates the study schedule.</p>
+            <p>AI features are optional. The built-in planner still generates the base study schedule, and the optimizer only runs when you choose it.</p>
             <p class="mb-2 text-muted small">If you are using a <code>.env</code> file, use plain <code>KEY=VALUE</code> lines like this:</p>
             <div class="help-code-block mb-3"><code>AI_INSIGHTS_ENABLED=1
 OLLAMA_BASE_URL=http://127.0.0.1:11434
@@ -225,6 +225,9 @@ OLLAMA_MODEL=llama3.2</code></div>
             <div class="help-code-block"><code>
 ollama serve
 ollama pull llama3.2</code></div>
+            <p class="mt-3 mb-0">
+                On the dashboard, <strong>Generate Insights</strong> produces advisory notes. <strong>Optimize Schedule</strong> can change pending session dates, durations, and count, but it must keep the total planned time within 20% of the base plan and cannot schedule past the allowed deadline window.
+            </p>
         </div>
     </div>
 </section>

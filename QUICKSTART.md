@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 11)
+# Quick Start Guide - Flask Web App (Updated for Chunk 12)
 
 ## First-Time Setup
 
@@ -125,6 +125,16 @@ ollama pull llama3.2
 ```
 
 Then log in, open the dashboard, and click **Generate Insights**.
+
+### AI Schedule Optimization
+
+After you already have a base study plan, click **Optimize Schedule** on the dashboard to let AI adjust pending session dates, durations, and count.
+
+The optimizer is still constrained:
+
+- it only replaces pending sessions
+- it keeps completed sessions intact
+- it keeps total pending study time within 20% of the base plan
 
 ## Features at a Glance
 
