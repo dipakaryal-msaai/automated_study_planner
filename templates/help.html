@@ -226,7 +226,7 @@ OLLAMA_MODEL=llama3.2</code></div>
 ollama serve
 ollama pull llama3.2</code></div>
             <p class="mt-3 mb-0">
-                On the dashboard, <strong>Generate Insights</strong> produces advisory notes. <strong>Optimize Schedule</strong> can change pending session dates, durations, and count, but it must keep the total planned time within 20% of the base plan and cannot schedule past the allowed deadline window.
+                On the dashboard, <strong>Generate Insights</strong> produces advisory notes and reuses cached results when your planner data has not changed. <strong>Optimize Schedule</strong> can change pending session dates, durations, and count, must keep the total planned time within 20% of the base plan, cannot schedule past the allowed deadline window, and automatically retries once if the first AI draft fails validation. <strong>AI Study Chat</strong> answers planner-aware questions plus general study advice, and its transcript stays only in the current browser session.
             </p>
         </div>
     </div>

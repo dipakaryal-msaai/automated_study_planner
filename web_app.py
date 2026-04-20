@@ -4,6 +4,7 @@ Web interface for managing courses, deadlines, and generating study plans.
 """
 
 import atexit
+import hashlib
 import json
 import os
 from collections import defaultdict
@@ -36,6 +37,7 @@ ai_insights_service = AIInsightsService()
 NOTIFICATION_POLL_INTERVAL_SECONDS = int(os.getenv('NOTIFICATION_POLL_INTERVAL_SECONDS', '60'))
 _scheduler_stop_event = Event()
 _scheduler_started = False
+AI_CHAT_HISTORY_LIMIT = 12
 
 
 @login_manager.user_loader
@@ -110,6 +112,70 @@ def is_guest_session_active() -> bool:
 def clear_ai_insights_cache() -> None:
     """Clear any cached dashboard AI insights for the current browser session."""
     session.pop('ai_dashboard_insights', None)
+    session.pop('ai_dashboard_error', None)
+    session.pop('ai_dashboard_context_fingerprint', None)
+
+
+def clear_ai_chat_state() -> None:
+    """Clear the dashboard AI chat transcript and any pending chat error."""
+    session.pop('ai_chat_history', None)
+    session.pop('ai_chat_error', None)
+
+
+def get_ai_chat_history() -> list:
+    """Return the current dashboard AI chat transcript from the browser session."""
+    raw_history = session.get('ai_chat_history', [])
+    if not isinstance(raw_history, list):
+        return []
+
+    history = []
+    for item in raw_history[-AI_CHAT_HISTORY_LIMIT:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get('role', '')).strip()
+        content = str(item.get('content', '')).strip()
+        if role not in {'user', 'assistant'} or not content:
+            continue
+        history.append({'role': role, 'content': content})
+    return history
+
+
+def save_ai_chat_history(history: list) -> None:
+    """Persist the trimmed dashboard AI chat transcript in the browser session."""
+    session['ai_chat_history'] = history[-AI_CHAT_HISTORY_LIMIT:]
+
+
+def append_ai_chat_message(role: str, content: str) -> None:
+    """Append one dashboard AI chat message to the browser-session transcript."""
+    history = get_ai_chat_history()
+    history.append({'role': role, 'content': content})
+    save_ai_chat_history(history)
+
+
+def _build_ai_context_fingerprint(context: dict) -> str:
+    """Build a stable fingerprint for the current AI context and model."""
+    payload = {
+        'model': ai_insights_service.model,
+        'context': context,
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(',', ':'))
+    return hashlib.sha256(serialized.encode('utf-8')).hexdigest()
+
+
+def get_cached_ai_dashboard_insights(context: dict):
+    """Return cached insights when the current planner snapshot has not changed."""
+    expected = _build_ai_context_fingerprint(context)
+    if session.get('ai_dashboard_context_fingerprint') != expected:
+        return None
+
+    cached = session.get('ai_dashboard_insights')
+    return cached if isinstance(cached, dict) else None
+
+
+def cache_ai_dashboard_insights(context: dict, insights: dict) -> None:
+    """Persist AI insights for the current planner snapshot."""
+    session['ai_dashboard_insights'] = insights
+    session['ai_dashboard_context_fingerprint'] = _build_ai_context_fingerprint(context)
     session.pop('ai_dashboard_error', None)
 
 
@@ -333,6 +399,35 @@ def build_ai_insights_context(courses, deadlines, study_plans) -> dict:
     }
 
 
+def build_ai_chat_context(courses, deadlines, study_plans) -> dict:
+    """Build a compact planner snapshot for the dashboard chat assistant."""
+    insights_context = build_ai_insights_context(courses, deadlines, study_plans)
+    pending_sessions = [plan for plan in study_plans if not plan.completion_status]
+    subject_minutes = defaultdict(int)
+    for plan in pending_sessions:
+        subject_minutes[plan.subject] += plan.duration
+
+    subject_workload = [
+        {'subject': subject, 'pending_minutes': minutes}
+        for subject, minutes in sorted(subject_minutes.items(), key=lambda item: (-item[1], item[0]))[:6]
+    ]
+
+    return {
+        'today': datetime.now().strftime('%Y-%m-%d'),
+        'courses': [
+            {
+                'name': course.name,
+                'difficulty': course.difficulty_level,
+            }
+            for course in list(courses.values())[:8]
+        ],
+        'planner_snapshot': insights_context,
+        'pending_session_count': len(pending_sessions),
+        'pending_minutes_total': sum(plan.duration for plan in pending_sessions),
+        'subject_workload': subject_workload,
+    }
+
+
 def build_ai_optimization_context(courses, deadlines, study_plans) -> dict:
     """Build an optimizer snapshot for pending sessions only."""
     today = datetime.now().date()
@@ -479,6 +574,38 @@ def validate_ai_optimized_schedule(optimized_payload, courses, deadlines, study_
 def load_ai_dashboard_state():
     """Read cached AI dashboard state from the browser session."""
     return session.get('ai_dashboard_insights'), session.pop('ai_dashboard_error', None)
+
+
+def load_ai_chat_state():
+    """Read the dashboard AI chat transcript and any pending error from the browser session."""
+    return get_ai_chat_history(), session.pop('ai_chat_error', None)
+
+
+def generate_validated_ai_schedule(courses, deadlines, study_plans):
+    """Generate and validate an AI-optimized schedule, retrying once on validation failure."""
+    optimization_context = build_ai_optimization_context(courses, deadlines, study_plans)
+    optimized_payload = ai_insights_service.optimize_schedule(optimization_context)
+
+    try:
+        optimized_sessions = validate_ai_optimized_schedule(
+            optimized_payload,
+            courses,
+            deadlines,
+            study_plans,
+        )
+        return optimized_payload, optimized_sessions, False
+    except RuntimeError as first_error:
+        retry_payload = ai_insights_service.optimize_schedule(
+            optimization_context,
+            retry_reason=str(first_error),
+        )
+        retry_sessions = validate_ai_optimized_schedule(
+            retry_payload,
+            courses,
+            deadlines,
+            study_plans,
+        )
+        return retry_payload, retry_sessions, True
 
 
 def get_api_payload():
@@ -984,12 +1111,15 @@ def render_dashboard(courses, deadlines, study_plans):
     ai_enabled = AIInsightsService.is_enabled()
     ai_ready = False
     ai_opt_ready = False
+    ai_chat_history = []
+    ai_chat_error = None
 
     if current_user.is_authenticated:
         daily_summary_time = get_daily_summary_time(current_user.id)
         pending_notifications = serialize_notifications(current_user.id, status='pending', limit=5)
         failed_notifications = serialize_notifications(current_user.id, status='failed', limit=5)
         ai_insights, ai_error = load_ai_dashboard_state()
+        ai_chat_history, ai_chat_error = load_ai_chat_state()
         ai_ready = bool(courses and deadlines and study_plans)
 
     for i, plan in enumerate(study_plans):
@@ -1014,6 +1144,8 @@ def render_dashboard(courses, deadlines, study_plans):
         ai_opt_ready=ai_opt_ready,
         ai_insights=ai_insights,
         ai_error=ai_error,
+        ai_chat_history=ai_chat_history,
+        ai_chat_error=ai_chat_error,
         ai_model=ai_insights_service.model,
     )
 
@@ -1106,6 +1238,7 @@ def auth_login():
 @app.route('/auth/logout')
 def auth_logout():
     clear_ai_insights_cache()
+    clear_ai_chat_state()
     logout_user()
     # Clear guest data too
     for key in ['guest_courses', 'guest_deadlines', 'guest_study_plans',
@@ -1406,7 +1539,7 @@ def generate_plan():
 @login_required
 def generate_ai_insights():
     """Generate advisory dashboard insights using the optional Ollama backend."""
-    clear_ai_insights_cache()
+    session.pop('ai_dashboard_error', None)
 
     if not AIInsightsService.is_enabled():
         session['ai_dashboard_error'] = (
@@ -1422,11 +1555,59 @@ def generate_ai_insights():
         return redirect(url_for('index'))
 
     context = build_ai_insights_context(courses, deadlines, study_plans)
+    cached_insights = get_cached_ai_dashboard_insights(context)
+    if cached_insights:
+        session['ai_dashboard_insights'] = cached_insights
+        flash('Reused cached AI insights because your planner data has not changed.', 'info')
+        return redirect(url_for('index'))
+
     try:
-        session['ai_dashboard_insights'] = ai_insights_service.generate_insights(context)
+        cache_ai_dashboard_insights(context, ai_insights_service.generate_insights(context))
     except RuntimeError as exc:
         session['ai_dashboard_error'] = str(exc)
 
+    return redirect(url_for('index'))
+
+
+@app.route('/ai/chat/message', methods=['POST'])
+@login_required
+def send_ai_chat_message():
+    """Send one dashboard chat message to the planner-aware AI assistant."""
+    if not AIInsightsService.is_enabled():
+        session['ai_chat_error'] = 'AI chat is disabled. Set AI_INSIGHTS_ENABLED=1 to enable it.'
+        return redirect(url_for('index'))
+
+    message = request.form.get('message', '').strip()
+    if not message:
+        session['ai_chat_error'] = 'Enter a question before sending an AI chat message.'
+        return redirect(url_for('index'))
+    if len(message) > 500:
+        session['ai_chat_error'] = 'Keep AI chat messages under 500 characters.'
+        return redirect(url_for('index'))
+
+    courses, deadlines, study_plans = load_data()
+    chat_context = build_ai_chat_context(courses, deadlines, study_plans)
+    chat_history = get_ai_chat_history()
+
+    try:
+        ai_reply = ai_insights_service.generate_chat_reply(chat_context, chat_history, message)
+    except RuntimeError as exc:
+        session['ai_chat_error'] = str(exc)
+        return redirect(url_for('index'))
+
+    append_ai_chat_message('user', message)
+    append_ai_chat_message('assistant', ai_reply['reply'])
+    if ai_reply.get('suggested_follow_up'):
+        flash(f"AI follow-up idea: {ai_reply['suggested_follow_up']}", 'info')
+    return redirect(url_for('index'))
+
+
+@app.route('/ai/chat/clear', methods=['POST'])
+@login_required
+def clear_ai_chat_messages():
+    """Clear the browser-session AI chat transcript."""
+    clear_ai_chat_state()
+    flash('AI chat history cleared for this browser session.', 'info')
     return redirect(url_for('index'))
 
 
@@ -1444,12 +1625,8 @@ def optimize_ai_schedule():
         flash('Generate a study plan with pending sessions before running AI optimization.', 'warning')
         return redirect(url_for('index'))
 
-    optimization_context = build_ai_optimization_context(courses, deadlines, study_plans)
-
     try:
-        optimized_payload = ai_insights_service.optimize_schedule(optimization_context)
-        optimized_sessions = validate_ai_optimized_schedule(
-            optimized_payload,
+        optimized_payload, optimized_sessions, retried = generate_validated_ai_schedule(
             courses,
             deadlines,
             study_plans,
@@ -1462,7 +1639,8 @@ def optimize_ai_schedule():
     clear_ai_insights_cache()
     summary = optimized_payload.get('summary', '').strip()
     if summary:
-        flash(f'AI schedule optimization applied. {summary}', 'success')
+        prefix = 'AI schedule optimization applied after one retry.' if retried else 'AI schedule optimization applied.'
+        flash(f'{prefix} {summary}', 'success')
     else:
         flash('AI schedule optimization applied.', 'success')
     return redirect(url_for('index'))

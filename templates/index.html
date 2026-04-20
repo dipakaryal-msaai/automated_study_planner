@@ -121,7 +121,7 @@
                     {% endif %}
                 </p>
                 <p class="text-muted small">
-                    The optimizer can adjust pending session dates, durations, and count, but it must keep total planned time within 20% of the base plan.
+                    Re-running unchanged insights uses cached results. The optimizer can adjust pending session dates, durations, and count, and it retries once automatically if the first AI schedule fails validation.
                 </p>
 
                 {% if not ai_enabled %}
@@ -180,6 +180,66 @@
                         Click <strong>Generate Insights</strong> to get AI-generated deadline risk notes, weekly priorities, and study tips for your current plan.
                     </div>
                     {% endif %}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if current_user.is_authenticated %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card border-info">
+            <div class="card-header bg-info-subtle d-flex justify-content-between align-items-center">
+                <h2 class="h4 mb-0">AI Study Chat</h2>
+                <form method="POST" action="{{ url_for('clear_ai_chat_messages') }}">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary" {% if not ai_chat_history %}disabled{% endif %}>
+                        Clear Chat
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Ask about your current planner, deadlines, workload, or general study strategy. Chat history stays only in this browser session.
+                    {% if ai_enabled %}
+                    Using Ollama model <code>{{ ai_model }}</code>.
+                    {% endif %}
+                </p>
+
+                {% if not ai_enabled %}
+                <div class="alert alert-secondary mb-0">
+                    AI chat is off. Set <code>AI_INSIGHTS_ENABLED=1</code> and configure Ollama to enable this panel.
+                </div>
+                {% else %}
+                    {% if ai_chat_error %}
+                    <div class="alert alert-danger">
+                        {{ ai_chat_error }}
+                    </div>
+                    {% endif %}
+
+                    <div class="ai-chat-thread border rounded p-3 mb-3">
+                        {% if ai_chat_history %}
+                            {% for message in ai_chat_history %}
+                            <div class="ai-chat-message ai-chat-{{ message.role }}">
+                                <div class="ai-chat-role">{{ 'You' if message.role == 'user' else 'AI Coach' }}</div>
+                                <div class="ai-chat-bubble">{{ message.content }}</div>
+                            </div>
+                            {% endfor %}
+                        {% else %}
+                        <div class="text-muted small mb-0">
+                            Try asking: "What should I focus on this week?", "Which deadline looks riskiest?", or "How should I study for my hardest course?"
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <form method="POST" action="{{ url_for('send_ai_chat_message') }}">
+                        <div class="mb-3">
+                            <label for="ai-chat-message" class="form-label">Ask the AI assistant</label>
+                            <textarea id="ai-chat-message" name="message" class="form-control" rows="3" maxlength="500" placeholder="Ask about your study plan, deadlines, or how to approach your workload."></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-info text-white">Send Message</button>
+                    </form>
                 {% endif %}
             </div>
         </div>

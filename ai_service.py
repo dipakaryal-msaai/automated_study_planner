@@ -1,10 +1,11 @@
 """
-Optional AI insights service for advisory study guidance via local Ollama.
+Optional AI service for advisory study guidance via local Ollama.
 """
 
 import json
 import os
 from datetime import datetime
+from typing import Optional
 from urllib import error as urllib_error
 from urllib import request as urllib_request
 
@@ -15,6 +16,9 @@ class AIInsightsService:
     def __init__(self):
         self.base_url = os.getenv('OLLAMA_BASE_URL', 'http://127.0.0.1:11434').rstrip('/')
         self.model = os.getenv('OLLAMA_MODEL', 'llama3.2')
+        self.timeout_seconds = max(5, int(os.getenv('OLLAMA_REQUEST_TIMEOUT_SECONDS', '30')))
+        self.json_retry_attempts = max(1, int(os.getenv('OLLAMA_JSON_RETRY_ATTEMPTS', '2')))
+        self.temperature = float(os.getenv('OLLAMA_TEMPERATURE', '0.2'))
 
     @staticmethod
     def is_enabled() -> bool:
@@ -23,50 +27,83 @@ class AIInsightsService:
 
     def generate_insights(self, context: dict) -> dict:
         """Return structured dashboard insights from the configured Ollama model."""
-        parsed = self._generate_json(self._build_prompt(context))
+        parsed = self._generate_json(self._build_prompt(context), max_output_tokens=320)
         return self._normalize_insights(parsed)
 
-    def optimize_schedule(self, context: dict) -> dict:
+    def optimize_schedule(self, context: dict, retry_reason: Optional[str] = None) -> dict:
         """Return an optimized pending schedule that respects explicit workload bounds."""
-        parsed = self._generate_json(self._build_schedule_prompt(context))
+        parsed = self._generate_json(
+            self._build_schedule_prompt(context, retry_reason=retry_reason),
+            max_output_tokens=640,
+        )
         return self._normalize_optimized_schedule(parsed)
 
-    def _generate_json(self, prompt: str) -> dict:
-        """Send a JSON-only generation request to Ollama and parse the response."""
-        payload = {
-            'model': self.model,
-            'prompt': prompt,
-            'stream': False,
-            'format': 'json',
-        }
-
-        request = urllib_request.Request(
-            f'{self.base_url}/api/generate',
-            data=json.dumps(payload).encode('utf-8'),
-            headers={'Content-Type': 'application/json'},
-            method='POST',
+    def generate_chat_reply(self, context: dict, history: list, message: str) -> dict:
+        """Return a planner-aware chat reply for the dashboard assistant."""
+        parsed = self._generate_json(
+            self._build_chat_prompt(context, history, message),
+            max_output_tokens=420,
         )
+        return self._normalize_chat_response(parsed)
 
-        try:
-            with urllib_request.urlopen(request, timeout=45) as response:
-                raw = json.loads(response.read().decode('utf-8'))
-        except urllib_error.URLError as exc:
-            raise RuntimeError(
-                'Could not reach Ollama. Start Ollama locally and verify OLLAMA_BASE_URL.'
-            ) from exc
+    def _generate_json(self, prompt: str, max_output_tokens: int) -> dict:
+        """Send a JSON-only generation request to Ollama and parse the response."""
+        retry_prompt = prompt
 
-        model_response = raw.get('response', '').strip()
-        if not model_response:
-            raise RuntimeError('Ollama returned an empty response.')
+        for attempt in range(self.json_retry_attempts):
+            payload = {
+                'model': self.model,
+                'prompt': retry_prompt,
+                'stream': False,
+                'format': 'json',
+                'options': {
+                    'temperature': self.temperature,
+                    'num_predict': max_output_tokens,
+                },
+            }
 
-        try:
-            return json.loads(model_response)
-        except json.JSONDecodeError as exc:
-            raise RuntimeError('Ollama returned invalid JSON.') from exc
+            request = urllib_request.Request(
+                f'{self.base_url}/api/generate',
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json'},
+                method='POST',
+            )
+
+            try:
+                with urllib_request.urlopen(request, timeout=self.timeout_seconds) as response:
+                    raw = json.loads(response.read().decode('utf-8'))
+            except urllib_error.URLError as exc:
+                raise RuntimeError(
+                    'Could not reach Ollama. Start Ollama locally and verify OLLAMA_BASE_URL.'
+                ) from exc
+
+            model_response = raw.get('response', '').strip()
+            if not model_response:
+                if attempt == self.json_retry_attempts - 1:
+                    raise RuntimeError('Ollama returned an empty response.')
+                retry_prompt = (
+                    f'{prompt}\n'
+                    'IMPORTANT: Your previous reply was empty. '
+                    'Return exactly one valid JSON object matching the required schema.'
+                )
+                continue
+
+            try:
+                return json.loads(model_response)
+            except json.JSONDecodeError as exc:
+                if attempt == self.json_retry_attempts - 1:
+                    raise RuntimeError('Ollama returned invalid JSON.') from exc
+                retry_prompt = (
+                    f'{prompt}\n'
+                    'IMPORTANT: Your previous reply was not valid JSON. '
+                    'Return exactly one valid JSON object with double-quoted keys and no extra text.'
+                )
+
+        raise RuntimeError('Ollama returned invalid JSON.')
 
     def _build_prompt(self, context: dict) -> str:
         """Build a concise JSON-only prompt for dashboard insights."""
-        snapshot = json.dumps(context, indent=2)
+        snapshot = json.dumps(context, separators=(',', ':'))
         return (
             "You are an academic study coach for a study planning application.\n"
             "Analyze the provided planner snapshot and return only valid JSON.\n"
@@ -78,15 +115,16 @@ class AIInsightsService:
             '  "weekly_priorities": ["priority 1", "priority 2", "priority 3"],\n'
             '  "study_tips": ["tip 1", "tip 2", "tip 3"]\n'
             "}\n"
+            "Keep the summary and risk note to at most 2 sentences each.\n"
             "Keep the advice specific, practical, and grounded in the snapshot. "
             "Avoid inventing data.\n\n"
             f"Planner snapshot:\n{snapshot}\n"
         )
 
-    def _build_schedule_prompt(self, context: dict) -> str:
+    def _build_schedule_prompt(self, context: dict, retry_reason: Optional[str] = None) -> str:
         """Build a JSON-only prompt for schedule optimization."""
-        snapshot = json.dumps(context, indent=2)
-        return (
+        snapshot = json.dumps(context, separators=(',', ':'))
+        prompt = (
             "You are optimizing a study schedule for a study planning application.\n"
             "Return only valid JSON with no markdown fences.\n"
             "You may change pending session dates, durations, and the number of pending sessions.\n"
@@ -110,6 +148,36 @@ class AIInsightsService:
             "  ]\n"
             "}\n\n"
             f"Planner snapshot:\n{snapshot}\n"
+        )
+
+        if retry_reason:
+            prompt += (
+                "\nThe previous optimization failed validation for this reason:\n"
+                f"{retry_reason}\n"
+                "Fix that exact issue and return a revised schedule that satisfies every constraint.\n"
+            )
+
+        return prompt
+
+    def _build_chat_prompt(self, context: dict, history: list, message: str) -> str:
+        """Build a JSON-only prompt for the planner-aware chat assistant."""
+        snapshot = json.dumps(context, separators=(',', ':'))
+        conversation = json.dumps(history[-6:], separators=(',', ':'))
+        return (
+            "You are a study planning assistant inside a study planner dashboard.\n"
+            "Answer the user's question using the current planner snapshot when relevant.\n"
+            "You may also give general study advice, but do not invent planner facts that are not present.\n"
+            "If the snapshot is sparse or missing details, say that briefly and still be helpful.\n"
+            "Keep the reply concise, practical, and under 6 sentences.\n"
+            "Return only valid JSON with no markdown fences.\n"
+            "Return an object with this exact shape:\n"
+            "{\n"
+            '  "reply": "direct answer to the user",\n'
+            '  "suggested_follow_up": "short optional follow-up question prompt or empty string"\n'
+            "}\n\n"
+            f"Planner snapshot:\n{snapshot}\n"
+            f"Recent conversation:\n{conversation}\n"
+            f"User message:\n{message}\n"
         )
 
     @staticmethod
@@ -172,6 +240,22 @@ class AIInsightsService:
             'summary': summary,
             'changes': normalize_list(parsed.get('changes')),
             'study_sessions': normalized_sessions,
+            'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
+        }
+
+    @staticmethod
+    def _normalize_chat_response(parsed: dict) -> dict:
+        """Normalize planner-aware chat output from Ollama."""
+        reply = str(parsed.get('reply', '')).strip()
+        follow_up = str(parsed.get('suggested_follow_up', '')).strip()
+
+        if not reply:
+            raise RuntimeError('AI chat response did not include a reply.')
+
+        return {
+            'reply': reply,
+            'suggested_follow_up': follow_up,
             'generated_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
             'model': os.getenv('OLLAMA_MODEL', 'llama3.2'),
         }

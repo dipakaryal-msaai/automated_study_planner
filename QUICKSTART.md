@@ -1,4 +1,4 @@
-# Quick Start Guide - Flask Web App (Updated for Chunk 12)
+# Quick Start Guide - Flask Web App (Updated for Chunk 14)
 
 ## First-Time Setup
 
@@ -126,6 +126,8 @@ ollama pull llama3.2
 
 Then log in, open the dashboard, and click **Generate Insights**.
 
+If you click **Generate Insights** again without changing your planner data, the app now reuses the cached insight result instead of calling Ollama again.
+
 ### AI Schedule Optimization
 
 After you already have a base study plan, click **Optimize Schedule** on the dashboard to let AI adjust pending session dates, durations, and count.
@@ -135,6 +137,21 @@ The optimizer is still constrained:
 - it only replaces pending sessions
 - it keeps completed sessions intact
 - it keeps total pending study time within 20% of the base plan
+- it retries once automatically if the first AI draft fails validation
+
+Optional local tuning:
+
+```bash
+OLLAMA_REQUEST_TIMEOUT_SECONDS=30
+OLLAMA_JSON_RETRY_ATTEMPTS=2
+OLLAMA_TEMPERATURE=0.2
+```
+
+### AI Study Chat
+
+After logging in, open the dashboard and use **AI Study Chat** to ask about your deadlines, workload, risky courses, or general study strategy.
+
+The first version keeps chat history only in the current browser session, so it is not shared across devices or saved in the database.
 
 ## Features at a Glance
 
