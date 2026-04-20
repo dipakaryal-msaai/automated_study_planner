@@ -9,7 +9,7 @@ A comprehensive study planner application with both CLI and web interfaces. Feat
 - ✅ Automatically generate personalized study plans
 - ✅ Track completion status of study sessions
 - ✅ **SQLite Database Storage** - Robust database with CRUD operations (Chunk 4)
-- ✅ **PostgreSQL Support** - Production-ready for Heroku deployment (Chunk 4)
+- ✅ **PostgreSQL Support** - Production-ready for Render/managed Postgres deployment (Chunk 4)
 - ✅ **Migration Tool** - Easy JSON-to-SQLite data migration (Chunk 4)
 - ✅ **Cross-session state** - All data persists across application restarts
 - ✅ **Flask Web Interface** - Beautiful, responsive web UI with Bootstrap 5
@@ -60,18 +60,26 @@ python migrate_json_to_db.py
 The application uses SQLite by default with the database file at `data/study_planner.db`. No additional configuration needed.
 
 ### PostgreSQL (Production)
-For production deployment (e.g., Heroku):
+For production deployment (e.g., Render):
 1. Set the `DATABASE_URL` environment variable:
 ```bash
 export DATABASE_URL=postgresql://user:password@host:5432/database
 ```
 
-2. On Heroku, this is automatically set when you add the Postgres add-on:
+The application automatically detects and uses the database specified in `DATABASE_URL`.
+
+### Required Production Configuration
+
+Set these for production deployments:
+
 ```bash
-heroku addons:create heroku-postgresql:hobby-dev
+export SECRET_KEY=replace-with-a-long-random-secret
+export SESSION_COOKIE_SECURE=1
+export REMEMBER_COOKIE_SECURE=1
+export PREFERRED_URL_SCHEME=https
 ```
 
-The application automatically detects and uses the database specified in `DATABASE_URL`.
+The app can generate a temporary in-memory secret for local development, but production should always provide an explicit `SECRET_KEY`.
 
 ## Usage
 
@@ -97,6 +105,29 @@ For a one-time delivery check:
 ```bash
 python notification_worker.py --once
 ```
+
+### Render Deployment
+
+Recommended setup:
+
+1. **Web service**
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `gunicorn web_app:app`
+   - Environment:
+     - `SECRET_KEY`
+     - `DATABASE_URL`
+     - `SESSION_COOKIE_SECURE=1`
+     - `REMEMBER_COOKIE_SECURE=1`
+     - `PREFERRED_URL_SCHEME=https`
+     - `NOTIFICATION_SCHEDULER_ENABLED=0`
+
+2. **Background worker**
+   - Build command: `pip install -r requirements.txt`
+   - Start command: `python notification_worker.py`
+
+3. **Optional AI**
+   - Keep `AI_INSIGHTS_ENABLED=0` unless the Ollama endpoint is reachable from Render
+   - If using a remote Ollama host, set `OLLAMA_BASE_URL` to that reachable endpoint
 
 ### CLI Application
 For command-line interface:
@@ -289,7 +320,7 @@ export NOTIFICATION_SCHEDULER_ENABLED=1
 export NOTIFICATION_POLL_INTERVAL_SECONDS=60
 ```
 
-- Set `NOTIFICATION_SCHEDULER_ENABLED=0` if you only want to use `notification_worker.py`
+- Set `NOTIFICATION_SCHEDULER_ENABLED=0` on Render web services if you are running `notification_worker.py` separately
 - `NOTIFICATION_POLL_INTERVAL_SECONDS` controls how often due reminders are checked
 
 ## Admin Dashboard (Chunk 8)

@@ -193,7 +193,7 @@ The first version keeps chat history only in the current browser session, so it 
 5. **Database advantages**
    - Faster queries and better performance
    - Data integrity with foreign keys and constraints
-   - Ready for PostgreSQL deployment on Heroku
+   - Ready for PostgreSQL deployment on Render
 
 ## Troubleshooting
 
@@ -229,10 +229,33 @@ SELECT * FROM courses;
 .quit
 ```
 
-**PostgreSQL (for Heroku deployment)**:
+**PostgreSQL (for Render deployment)**:
 - Set `DATABASE_URL` environment variable
 - Application automatically switches to PostgreSQL
 - No code changes needed!
+
+## Render Production Checklist
+
+Set these environment variables on the Render web service:
+
+```bash
+SECRET_KEY=replace-with-a-long-random-secret
+DATABASE_URL=postgresql://...
+SESSION_COOKIE_SECURE=1
+REMEMBER_COOKIE_SECURE=1
+PREFERRED_URL_SCHEME=https
+NOTIFICATION_SCHEDULER_ENABLED=0
+```
+
+Recommended commands:
+
+```bash
+# Web service
+gunicorn web_app:app
+
+# Background worker
+python notification_worker.py
+```
 
 ## Stopping the Server
 

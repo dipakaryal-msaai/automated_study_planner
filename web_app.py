@@ -7,6 +7,7 @@ import atexit
 import hashlib
 import json
 import os
+import secrets
 from collections import defaultdict
 from dotenv import load_dotenv
 load_dotenv()
@@ -20,7 +21,13 @@ from database import DatabaseManager, UserModel
 from models import Course, Deadline, StudySession
 
 app = Flask(__name__)
-app.secret_key = 'study_planner_secret_key_2024'
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY') or secrets.token_hex(32)
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.getenv('SESSION_COOKIE_SECURE', '0') == '1'
+app.config['SESSION_COOKIE_SAMESITE'] = os.getenv('SESSION_COOKIE_SAMESITE', 'Lax')
+app.config['REMEMBER_COOKIE_HTTPONLY'] = True
+app.config['REMEMBER_COOKIE_SECURE'] = os.getenv('REMEMBER_COOKIE_SECURE', '0') == '1'
+app.config['PREFERRED_URL_SCHEME'] = os.getenv('PREFERRED_URL_SCHEME', 'http')
 API_PREFIX = '/api/v1'
 
 # ---------------------------------------------------------------------------
@@ -1993,4 +2000,7 @@ start_notification_scheduler()
 
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    host = os.getenv('HOST', '127.0.0.1')
+    port = int(os.getenv('PORT', '5000'))
+    debug = os.getenv('FLASK_DEBUG', '0') == '1'
+    app.run(host=host, port=port, debug=debug)

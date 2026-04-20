@@ -6,8 +6,11 @@ Reads existing JSON files and imports them into the new database structure.
 import os
 import json
 from datetime import datetime
+from dotenv import load_dotenv
 from database import DatabaseManager
 from models import Course, Deadline, StudySession
+
+load_dotenv()
 
 def backup_json_files():
     """Backup existing JSON files before migration."""

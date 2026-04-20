@@ -5,7 +5,10 @@ Standalone worker for processing daily study-summary notifications.
 import argparse
 import os
 import time
+from dotenv import load_dotenv
 from database import DatabaseManager
+
+load_dotenv()
 
 
 def main():
